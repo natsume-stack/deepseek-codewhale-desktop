@@ -258,3 +258,209 @@ export interface RouteDecision {
   needsTodoSplit: boolean
   concurrency: number
 }
+
+/* ============================================================
+ * Skill 技能生态（P0）
+ * ============================================================ */
+export interface SkillMeta {
+  id: string
+  name: string
+  description: string
+  triggers: string[]
+  category: string
+  version: string
+  enabled: boolean
+  builtin: boolean
+}
+
+export interface SkillStep {
+  order: number
+  description: string
+  action: string
+  todoText?: string
+}
+
+export interface SkillDefinition {
+  meta: SkillMeta
+  steps: SkillStep[]
+  requiredTools: string[]
+  defaultPermission: string
+  rawMarkdown: string
+}
+
+export interface SkillMatch {
+  skillId: string
+  skillName: string
+  score: number
+  matchedKeywords: string[]
+}
+
+/** 技能执行日志条目（前端维护，记录每次技能触发的步骤与结果） */
+export interface SkillLogEntry {
+  id: string
+  ts: number
+  skillId: string
+  skillName: string
+  stepOrder: number
+  stepTotal: number
+  action: string
+  description: string
+  result: 'running' | 'success' | 'failed' | 'skipped'
+  message?: string
+}
+
+/* ============================================================
+ * MCP 插件生态（P1）
+ * ============================================================ */
+export type McpTransport = 'stdio' | 'sse'
+export type McpCategory = 'lsp' | 'knowledge' | 'ci' | 'database' | 'security' | 'other'
+
+export interface McpMeta {
+  id: string
+  name: string
+  description: string
+  version: string
+  transport: McpTransport
+  enabled: boolean
+  highRisk: boolean
+  category: McpCategory
+  capabilities: string
+}
+
+export interface McpConfig {
+  meta: McpMeta
+  command?: string
+  args?: string[]
+  env?: Record<string, string>
+  url?: string
+  permissionScope: string
+  timeoutSecs: number
+}
+
+export interface McpStatus {
+  id: string
+  connected: boolean
+  lastError?: string
+  lastCallAt?: string
+  callCount: number
+}
+
+/* ============================================================
+ * 设置页面配置类型（P2）
+ * ============================================================ */
+export interface ApiProfile {
+  id: string
+  name: string
+  provider: string
+  apiKeyMasked: string
+  baseUrl: string
+  model: string
+  displayName: string
+  supportsReasoning: boolean
+  maxTokens: number
+}
+
+export interface ModelProfilesConfig {
+  profiles: ApiProfile[]
+  activeProfileId?: string
+}
+
+export interface RagConfig {
+  enabled: boolean
+  chunkSize: number
+  maxTokens: number
+  recallWeight: number
+  fileFilter: string[]
+  autoIndex: boolean
+}
+
+export interface FormatterConfig {
+  rustEnabled: boolean
+  goEnabled: boolean
+  pythonEnabled: boolean
+  typescriptEnabled: boolean
+  formatOnSave: boolean
+  customCommands: Record<string, string>
+}
+
+export interface CacheDebugConfig {
+  fingerprintCheck: boolean
+  mountSizeThreshold: number
+  autoCompressThreshold: number
+}
+
+/** 缓存实时统计（仪表盘用） */
+export interface CacheStats {
+  hitRate: number
+  hits: number
+  misses: number
+  fingerprint: string
+}
+
+export interface AppearanceConfig {
+  micaEnabled: boolean
+  theme: string
+  cornerRadius: number
+  animationDurationMs: number
+  codeHighlightTheme: string
+}
+
+export interface ShortcutsConfig {
+  bindings: Record<string, string>
+}
+
+export interface SecurityConfig {
+  approvalTimeoutSecs: number
+  shellBlacklist: string[]
+  sessionExpireHours: number
+  auditLogPath?: string
+}
+
+/* ============================================================
+ * 设置页面 - Skill / MCP 管理类型（P2 扩展）
+ *
+ * 注意：与上方 P0/P1 的 SkillMeta / McpConfig 是不同视角：
+ *   - SkillMeta / McpConfig 描述「单条技能/插件定义」
+ *   - SkillItem / McpService 描述「设置页列表中的轻量条目」
+ * 两者字段重叠但不完全一致，故独立定义。
+ * ============================================================ */
+export type SkillDefaultPermission = 'readOnly' | 'workspaceWrite' | 'fullAccess' | 'ask'
+
+/** 设置页技能列表条目（轻量视图模型） */
+export interface SkillItem {
+  id: string
+  name: string
+  description: string
+  /** 来源：本地 .workspace/.skills 或外部导入 */
+  source: 'local' | 'external'
+  enabled: boolean
+}
+
+/** 设置页技能配置（list 响应） */
+export interface SkillsConfig {
+  skills: SkillItem[]
+  defaultPermission: SkillDefaultPermission
+}
+
+/** MCP 权限作用域（设置页表单用） */
+export type McpPermissionScope = 'file' | 'network' | 'shell' | 'database'
+
+/** MCP 服务运行状态（设置页列表用） */
+export type McpServiceStatus = 'connected' | 'disconnected' | 'error'
+
+/** 设置页 MCP 服务列表条目（轻量视图模型） */
+export interface McpService {
+  id: string
+  name: string
+  transport: McpTransport
+  endpoint: string
+  permissions: McpPermissionScope[]
+  enabled: boolean
+  status: McpServiceStatus
+}
+
+/** 设置页 MCP 配置（list 响应） */
+export interface McpServicesConfig {
+  services: McpService[]
+  globalEnabled: boolean
+}

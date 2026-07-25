@@ -5,6 +5,7 @@
 
 use crate::error::{AppError, AppResult};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -18,6 +19,28 @@ pub struct AppConfig {
     /// Agent 权限等级（P0-8 三级权限沙盒）。
     #[serde(default)]
     pub permission: PermissionConfig,
+    // === P2 新增配置 ===
+    /// 多模型多凭证配置（P2 模型&API 卡片）。
+    #[serde(default)]
+    pub model_profiles: ModelProfilesConfig,
+    /// RAG 检索配置（P2 RAG 卡片）。
+    #[serde(default)]
+    pub rag: RagConfig,
+    /// 格式化配置（P2 格式化卡片）。
+    #[serde(default)]
+    pub formatter: FormatterConfig,
+    /// 缓存调试配置（P2 缓存卡片）。
+    #[serde(default)]
+    pub cache_debug: CacheDebugConfig,
+    /// 外观主题配置（P2 外观卡片）。
+    #[serde(default)]
+    pub appearance: AppearanceConfig,
+    /// 快捷键配置（P2 快捷键卡片）。
+    #[serde(default)]
+    pub shortcuts: ShortcutsConfig,
+    /// 通用安全配置（P2 安全卡片）。
+    #[serde(default)]
+    pub security: SecurityConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -136,6 +159,13 @@ impl Default for AppConfig {
                 context_length: 20,
             },
             permission: PermissionConfig::default(),
+            model_profiles: ModelProfilesConfig::default(),
+            rag: RagConfig::default(),
+            formatter: FormatterConfig::default(),
+            cache_debug: CacheDebugConfig::default(),
+            appearance: AppearanceConfig::default(),
+            shortcuts: ShortcutsConfig::default(),
+            security: SecurityConfig::default(),
         }
     }
 }
@@ -246,7 +276,7 @@ impl AppConfig {
     }
 }
 
-fn mask_key(k: &str) -> String {
+pub(crate) fn mask_key(k: &str) -> String {
     let len = k.chars().count();
     if len <= 8 {
         return "*".repeat(len.max(1));
@@ -300,4 +330,161 @@ pub const IGNORED_DIRS: &[&str] = &[
 /// 判断给定目录名是否应被忽略（P0-4）。
 pub fn is_ignored_dir(name: &str) -> bool {
     IGNORED_DIRS.contains(&name)
+}
+
+/* ============================================================
+ * P2 完整设置页面后端配置结构体
+ * ============================================================ */
+
+/// 多模型多凭证配置（P2 模型&API 卡片）。
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelProfilesConfig {
+    /// 多套 API 凭证。
+    pub profiles: Vec<ApiProfile>,
+    /// 当前激活的 profile id。
+    pub active_profile_id: Option<String>,
+}
+
+/// 单套 API 凭证。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiProfile {
+    pub id: String,
+    /// 显示名称，如 "DeepSeek 主账号"。
+    pub name: String,
+    /// 服务商: "deepseek" | "openrouter" | "mimo" | "volcengine"。
+    pub provider: String,
+    /// 脱敏后的 key（sk-****xxxx）。
+    pub api_key_masked: String,
+    /// 加密后的 key（简化: base64）。
+    pub api_key_encrypted: Option<String>,
+    pub base_url: String,
+    pub model: String,
+    /// 展示名: "V4-Flash" / "V4-Pro"。
+    pub display_name: String,
+    /// 是否支持 reasoning。
+    pub supports_reasoning: bool,
+    pub max_tokens: u32,
+}
+
+/// RAG 检索配置（P2 RAG 卡片）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RagConfig {
+    pub enabled: bool,
+    /// 分块大小（默认 500 行）。
+    pub chunk_size: usize,
+    /// 召回上限。
+    pub max_tokens: usize,
+    /// 召回权重 0.0-1.0。
+    pub recall_weight: f64,
+    /// 自定义过滤规则。
+    pub file_filter: Vec<String>,
+    pub auto_index: bool,
+}
+
+impl Default for RagConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            chunk_size: 500,
+            max_tokens: 8000,
+            recall_weight: 0.7,
+            file_filter: vec![],
+            auto_index: false,
+        }
+    }
+}
+
+/// 格式化配置（P2 格式化卡片）。
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct FormatterConfig {
+    pub rust_enabled: bool,
+    pub go_enabled: bool,
+    pub python_enabled: bool,
+    pub typescript_enabled: bool,
+    pub format_on_save: bool,
+    /// language -> command。
+    pub custom_commands: HashMap<String, String>,
+}
+
+/// 缓存调试配置（P2 缓存卡片）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CacheDebugConfig {
+    pub fingerprint_check: bool,
+    /// 单文件挂载上限，默认 51200 (50KB)。
+    pub mount_size_threshold: usize,
+    /// 历史对话自动压缩阈值。
+    pub auto_compress_threshold: usize,
+}
+
+impl Default for CacheDebugConfig {
+    fn default() -> Self {
+        Self {
+            fingerprint_check: true,
+            mount_size_threshold: 51200,
+            auto_compress_threshold: 100,
+        }
+    }
+}
+
+/// 外观主题配置（P2 外观卡片）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppearanceConfig {
+    pub mica_enabled: bool,
+    /// "dark" | "light"。
+    pub theme: String,
+    /// 全局圆角。
+    pub corner_radius: u32,
+    pub animation_duration_ms: u32,
+    /// "github-dark" | "dracula" | ...
+    pub code_highlight_theme: String,
+}
+
+impl Default for AppearanceConfig {
+    fn default() -> Self {
+        Self {
+            mica_enabled: true,
+            theme: "dark".into(),
+            corner_radius: 8,
+            animation_duration_ms: 200,
+            code_highlight_theme: "github-dark".into(),
+        }
+    }
+}
+
+/// 快捷键配置（P2 快捷键卡片）。
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ShortcutsConfig {
+    /// action -> shortcut, e.g. "send-message" -> "Enter"。
+    pub bindings: HashMap<String, String>,
+}
+
+/// 通用安全配置（P2 安全卡片）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SecurityConfig {
+    /// 默认 300 (5分钟)。
+    pub approval_timeout_secs: u64,
+    /// 危险命令黑名单。
+    pub shell_blacklist: Vec<String>,
+    /// 会话过期时长。
+    pub session_expire_hours: u64,
+    pub audit_log_path: Option<String>,
+}
+
+impl Default for SecurityConfig {
+    fn default() -> Self {
+        Self {
+            approval_timeout_secs: 300,
+            shell_blacklist: vec!["rm -rf /".into(), "format".into(), "del /f /s /q".into()],
+            session_expire_hours: 168, // 7 天
+            audit_log_path: None,
+        }
+    }
 }

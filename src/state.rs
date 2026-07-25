@@ -26,6 +26,14 @@ pub struct SharedState {
     pub approvals: ApprovalStore,
     /// Reasonix 字节稳定前缀缓存存储（P0+ 最高优先级）。
     pub caches: CacheStore,
+    /// Skill 技能注册表（P0 Skill 生态）。
+    pub skills: crate::skills::SkillStore,
+    /// MCP 插件注册表（P1 MCP 生态）。
+    pub mcp: crate::mcp::McpStore,
+    /// 高危插件总开关。
+    pub mcp_high_risk_enabled: Arc<RwLock<bool>>,
+    /// Skill 默认权限等级（P2 设置页）：ReadOnly / WorkspaceWrite / FullAccess / ask。
+    pub skills_default_permission: Arc<RwLock<String>>,
 }
 
 impl SharedState {
@@ -39,6 +47,10 @@ impl SharedState {
             todos: TodoStore::new(),
             approvals: ApprovalStore::new(),
             caches: CacheStore::new(),
+            skills: crate::skills::SkillStore::new(),
+            mcp: crate::mcp::McpStore::new(),
+            mcp_high_risk_enabled: Arc::new(RwLock::new(false)),
+            skills_default_permission: Arc::new(RwLock::new("WorkspaceWrite".into())),
         }
     }
 

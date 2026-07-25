@@ -9,9 +9,11 @@ mod deepseek;
 mod diff;
 mod dsml;
 mod error;
+mod mcp;
 mod r1_harvest;
 mod routes;
 mod session;
+mod skills;
 mod smart_router;
 mod state;
 mod tool_repair;
@@ -35,6 +37,10 @@ async fn main() -> anyhow::Result<()> {
     let addr: SocketAddr = format!("{host}:{port}").parse()?;
 
     let state = state::SharedState::new(cfg);
+    // 初始化内置 17 项标准 Skill + 12 项真实开源 MCP 插件配置（P0 Skill / P1 MCP 生态）
+    state.skills.init_builtin().await;
+    state.mcp.init_builtin().await;
+    tracing::info!("已加载内置 Skill 与 MCP 插件配置");
     let app = routes::build_router(state);
 
     tracing::info!("CodeWhale server listening on http://{}", addr);

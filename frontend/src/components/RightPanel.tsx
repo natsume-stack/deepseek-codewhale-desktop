@@ -21,9 +21,10 @@ import { useTodosStore } from '../stores/todos'
 import { useDialogStore } from '../stores/dialog'
 import { DiffViewer } from './DiffViewer'
 import { RagPanel } from './RagPanel'
+import { SkillExecuteLog } from './SkillExecuteLog'
 import type { TodoItem } from '../types'
 
-type RightTab = 'changes' | 'todos' | 'rag'
+type RightTab = 'changes' | 'todos' | 'rag' | 'skill-log'
 
 interface RightPanelProps {
   /** 关闭按钮回调（折叠右栏） */
@@ -37,6 +38,7 @@ export function RightPanel({ onClose }: RightPanelProps) {
     { key: 'changes', label: '变更', icon: <ChangesIcon /> },
     { key: 'todos', label: '代办', icon: <TodoIcon /> },
     { key: 'rag', label: 'RAG', icon: <RagIcon /> },
+    { key: 'skill-log', label: '技能日志', icon: <SkillLogIcon /> },
   ]
 
   return (
@@ -69,6 +71,7 @@ export function RightPanel({ onClose }: RightPanelProps) {
         {tab === 'changes' && <ChangesTab />}
         {tab === 'todos' && <TodosTab />}
         {tab === 'rag' && <RagTab />}
+        {tab === 'skill-log' && <SkillLogTab />}
       </div>
     </div>
   )
@@ -301,6 +304,12 @@ function RagTab() {
   return <RagPanel />
 }
 
+/* ============== 技能日志 Tab（接入 SkillExecuteLog） ============== */
+
+function SkillLogTab() {
+  return <SkillExecuteLog />
+}
+
 /* ============== 共用子组件 ============== */
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
@@ -382,6 +391,16 @@ function RagIcon() {
       <path d="M2 7c0 1.1 2 2 4.5 2s4.5-.9 4.5-2" stroke="currentColor" strokeWidth="1.1" fill="none" />
       <path d="M10.5 9.5L14 13" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
       <circle cx="12.5" cy="11.5" r="2.5" stroke="currentColor" strokeWidth="1.1" fill="none" />
+    </svg>
+  )
+}
+
+/** 技能日志：终端 + 闪电 */
+function SkillLogIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" className="text-text-secondary">
+      <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.1" />
+      <path d="M4 6l2 2-2 2M7.5 10.5h4" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   )
 }

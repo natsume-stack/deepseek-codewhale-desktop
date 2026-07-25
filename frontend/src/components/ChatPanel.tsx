@@ -17,8 +17,11 @@ import { useDialogStore } from '../stores/dialog'
 import { useAutoScroll } from '../hooks/useAutoScroll'
 import { MessageItem } from './MessageItem'
 import { SlashMenu, BUILTIN_SLASH_COMMANDS } from './SlashMenu'
+import type { SlashCommand } from './SlashMenu'
 import { FilePicker } from './FilePicker'
 import { ModelSwitcher } from './ModelSwitcher'
+import { SkillListPanel } from './SkillListPanel'
+import { MCPManagerPanel } from './MCPManagerPanel'
 import { configApi, paramsApi } from '../lib/api'
 import type { ModelProfile } from '../types'
 
@@ -57,6 +60,30 @@ const BUILTIN_MODEL_PROFILES: ModelProfile[] = [
   },
 ]
 
+/**
+ * 扩展斜杠指令集：在内置指令基础上追加技能/插件相关指令。
+ *  - /skill       触发技能匹配（作为 slashCommand 传给后端）
+ *  - /skill-list  打开技能管理面板（视图类，不进入 slashCommand）
+ *  - /mcp         调用 MCP 插件工具（作为 slashCommand 传给后端）
+ *  - /mcp-list    打开 MCP 插件管理面板（视图类）
+ *  - /plugin      /mcp-list 别名（视图类）
+ */
+const EXTENDED_SLASH_COMMANDS: SlashCommand[] = [
+  ...BUILTIN_SLASH_COMMANDS,
+  { cmd: '/skill', label: '触发技能', desc: '对当前消息触发技能匹配' },
+  { cmd: '/skill-list', label: '技能列表', desc: '打开技能管理面板' },
+  { cmd: '/mcp', label: '调用插件', desc: '调用 MCP 插件工具' },
+  { cmd: '/mcp-list', label: '插件列表', desc: '打开 MCP 插件管理面板' },
+  { cmd: '/plugin', label: '插件管理', desc: '打开 MCP 插件管理面板（同 /mcp-list）' },
+]
+
+/** 视图类指令集合：选中后打开对应面板，不进入 slashCommand 流程 */
+const VIEW_COMMANDS: Record<string, 'skill' | 'mcp'> = {
+  '/skill-list': 'skill',
+  '/mcp-list': 'mcp',
+  '/plugin': 'mcp',
+}
+
 export function ChatPanel({ onToggleLeft, onToggleRight, leftCollapsed, rightCollapsed }: ChatPanelProps = {}) {
   const messages = useChatStore((s) => s.messages)
   const streaming = useChatStore((s) => s.streaming)
@@ -84,6 +111,9 @@ export function ChatPanel({ onToggleLeft, onToggleRight, leftCollapsed, rightCol
   const [model, setModel] = useState('deepseek-chat')
   const [defaultCtxLen, setDefaultCtxLen] = useState(20)
   const [defaultEffort, setDefaultEffort] = useState('medium')
+  // 视图类斜杠指令打开的浮层：/skill-list /mcp-list /plugin
+  const [skillListOpen, setSkillListOpen] = useState(false)
+  const [mcpListOpen, setMcpListOpen] = useState(false)
   const scrollRef = useAutoScroll(messages)
 
   // 拉取模型名 + 默认参数（仅一次）
@@ -268,8 +298,19 @@ export function ChatPanel({ onToggleLeft, onToggleRight, leftCollapsed, rightCol
           onAttachmentsChange={setAttachments}
           slashCommand={slashCommand}
           onSlashCommandChange={setSlashCommand}
+          commands={EXTENDED_SLASH_COMMANDS}
+          onOpenSkillList={() => setSkillListOpen(true)}
+          onOpenMcpList={() => setMcpListOpen(true)}
         />
       </div>
+
+      {/* === 视图类斜杠指令触发的浮层 === */}
+      {skillListOpen && (
+        <SkillListPanel floating onClose={() => setSkillListOpen(false)} />
+      )}
+      {mcpListOpen && (
+        <MCPManagerPanel floating onClose={() => setMcpListOpen(false)} />
+      )}
     </div>
   )
 }
@@ -292,6 +333,12 @@ interface ChatInputBarProps {
   onAttachmentsChange: (paths: string[]) => void
   slashCommand: string | null
   onSlashCommandChange: (cmd: string | null) => void
+  /** 斜杠指令列表（含技能/插件扩展指令） */
+  commands: SlashCommand[]
+  /** 视图类指令：打开技能管理面板 */
+  onOpenSkillList: () => void
+  /** 视图类指令：打开 MCP 插件管理面板 */
+  onOpenMcpList: () => void
 }
 
 /** 计算光标所在 token 的边界（基于上一个空格切分） */
@@ -331,6 +378,9 @@ function ChatInputBar({
   onAttachmentsChange,
   slashCommand,
   onSlashCommandChange,
+  commands,
+  onOpenSkillList,
+  onOpenMcpList,
 }: ChatInputBarProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   // SlashMenu 状态
@@ -394,10 +444,33 @@ function ChatInputBar({
     if (pickerVisible) setPickerVisible(false)
   }
 
-  /** 选中斜杠指令后：把输入框中的 `/xxx` token 替换为完整指令 + 空格 */
+  /** 选中斜杠指令后：把输入框中的 `/xxx` token 替换为完整指令 + 空格
+   *  视图类指令（/skill-list /mcp-list /plugin）例外：清除 token 后直接打开对应面板 */
   const handleSlashSelect = (cmd: string) => {
     const ta = textareaRef.current
     const range = slashTokenRef.current
+
+    // 视图类指令：清除输入框中的 /xxx token，打开对应面板，不进入 slashCommand 流程
+    const viewTarget = VIEW_COMMANDS[cmd]
+    if (viewTarget) {
+      if (ta && range) {
+        const before = value.slice(0, range.start)
+        const after = value.slice(range.end)
+        let newVal = `${before}${after}`
+        newVal = newVal.replace(/\s+\s/g, ' ').trimStart()
+        onChange(newVal)
+        requestAnimationFrame(() => ta.focus())
+      }
+      if (viewTarget === 'skill') {
+        onOpenSkillList()
+      } else {
+        onOpenMcpList()
+      }
+      setSlashVisible(false)
+      return
+    }
+
+    // 普通指令：替换 token 为完整指令 + 空格，并设置 slashCommand
     if (ta && range) {
       const before = value.slice(0, range.start)
       const after = value.slice(range.end)
@@ -544,7 +617,7 @@ function ChatInputBar({
 
       {/* 浮层菜单：斜杠指令 / 文件挂载 */}
       <SlashMenu
-        commands={BUILTIN_SLASH_COMMANDS}
+        commands={commands}
         visible={slashVisible}
         onSelect={handleSlashSelect}
         onClose={handleSlashClose}

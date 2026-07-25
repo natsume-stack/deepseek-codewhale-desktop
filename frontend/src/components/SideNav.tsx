@@ -3,45 +3,88 @@
  *
  * 设计规范（对标 Codex / 苹果风）：
  *   - 顶部：纯文字 "codewhale"（无 icon 无下拉，小写粗黑体）
- *   - 操作区：icon + 文字 极简行（新建对话 / 插件 /代办），无按钮感
+ *   - 操作区：icon + 文字 极简行（新建对话 / 代办 / 技能·插件），无按钮感
  *   - 搜索框：长椭圆 pill，半透明填充
  *   - 会话项：大圆角（rounded-xl），hover 圆润浮起，选中态蓝色高亮
  *   - 底部：设置 + 用户入口
  *
  * 视觉：透明背景，右侧极细分隔线，Mica 穿透
+ *
+ * 注：原 SideNav 通过 view 切换路由，但 NavView 仅含 'chat' | 'settings'，
+ * 新增「技能/插件」入口因受文件写权限约束无法扩展 App.tsx 的 NavView 类型，
+ * 故采用本地模态浮层（modal）形式承载 SkillListPanel / MCPManagerPanel。
  */
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { NavView } from '../App'
+import { SkillListPanel } from './SkillListPanel'
+import { MCPManagerPanel } from './MCPManagerPanel'
+import { sessionsApi } from '../lib/api'
+import type { Session } from '../types'
 
 interface SideNavProps {
   view: NavView
   onViewChange: (v: NavView) => void
 }
 
-/** 模拟最近会话（实际应来自后端 sessions API） */
-interface SessionItem {
-  id: string
-  title: string
-  preview: string
-  ts: string
-  /** 状态：idle / running / done */
-  status?: 'idle' | 'running' | 'done'
-}
-
-const MOCK_SESSIONS: SessionItem[] = [
-  { id: 's1', title: '实现 sha256 工具函数', preview: '在 src/utils.rs 添加…', ts: '刚刚', status: 'running' },
-  { id: 's2', title: '修复 unwrap panic', preview: '分析堆栈后定位到…', ts: '2 小时前', status: 'done' },
-  { id: 's3', title: '重构 chat_handler', preview: '拆分为 parse/dispatch…', ts: '昨天', status: 'done' },
-  { id: 's4', title: '解释 Myers 算法', preview: 'src/diff.rs 中实现…', ts: '3 天前', status: 'idle' },
-]
+/** 技能/插件浮层内的子视图 */
+type SkillsPluginsTab = 'skills' | 'plugins'
 
 export function SideNav({ view, onViewChange }: SideNavProps) {
-  const [activeSession, setActiveSession] = useState<string>('s1')
+  const [sessions, setSessions] = useState<Session[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [activeSession, setActiveSession] = useState<string | null>(null)
   const [query, setQuery] = useState('')
+  /** 技能/插件浮层是否打开 */
+  const [spOpen, setSpOpen] = useState(false)
+  /** 浮层内当前子 Tab */
+  const [spTab, setSpTab] = useState<SkillsPluginsTab>('skills')
 
-  const filtered = MOCK_SESSIONS.filter(
-    (s) => !query || s.title.includes(query) || s.preview.includes(query),
-  )
+  // 真实拉取会话列表
+  useEffect(() => {
+    let mounted = true
+    setLoading(true)
+    sessionsApi.list()
+      .then((res) => {
+        if (!mounted) return
+        setSessions(res.sessions)
+        setError(null)
+        // 默认选中第一个（仅当当前未选中时）
+        setActiveSession((prev) => prev ?? (res.sessions[0]?.id ?? null))
+      })
+      .catch((e) => {
+        if (!mounted) return
+        setError(e instanceof Error ? e.message : '加载会话失败')
+        setSessions([])
+      })
+      .finally(() => {
+        if (mounted) setLoading(false)
+      })
+    return () => { mounted = false }
+  }, [])
+
+  // 重试加载
+  const retry = () => {
+    setLoading(true)
+    setError(null)
+    sessionsApi.list()
+      .then((res) => {
+        setSessions(res.sessions)
+        setActiveSession((prev) => prev ?? (res.sessions[0]?.id ?? null))
+      })
+      .catch((e) => {
+        setError(e instanceof Error ? e.message : '加载会话失败')
+        setSessions([])
+      })
+      .finally(() => setLoading(false))
+  }
+
+  // 基于真实数据过滤（title / preview / id 任一匹配）
+  const filtered = sessions.filter((s) => {
+    if (!query) return true
+    const text = `${deriveTitle(s)} ${derivePreview(s)} ${s.id}`.toLowerCase()
+    return text.includes(query.toLowerCase())
+  })
 
   return (
     <nav className="flex flex-col w-60 flex-shrink-0 border-r border-white/5 select-none">
@@ -67,8 +110,9 @@ export function SideNav({ view, onViewChange }: SideNavProps) {
         />
         <NavAction
           icon={<PluginIcon />}
-          label="插件"
-          onClick={() => onViewChange('chat')}
+          label="技能/插件"
+          active={spOpen}
+          onClick={() => setSpOpen(true)}
         />
       </div>
 
@@ -93,13 +137,43 @@ export function SideNav({ view, onViewChange }: SideNavProps) {
         <div className="px-2 py-1.5 text-2xs uppercase tracking-wider text-text-tertiary font-semibold">
           最近
         </div>
-        {filtered.length === 0 ? (
-          <div className="px-2 py-4 text-2xs text-text-tertiary text-center">
-            未找到匹配会话
+        {/* 加载态：骨架屏 */}
+        {loading && (
+          <div className="space-y-1">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="px-3 py-2.5 rounded-xl mb-1 animate-pulse-soft">
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <div className="h-3 w-2/3 rounded bg-white/6" />
+                  <div className="h-1.5 w-1.5 rounded-full bg-white/6" />
+                </div>
+                <div className="h-2 w-1/2 rounded bg-white/4" />
+              </div>
+            ))}
           </div>
-        ) : (
+        )}
+        {/* 错误态：提示 + 重试 */}
+        {!loading && error && (
+          <div className="px-3 py-4 space-y-2">
+            <div className="text-2xs text-rose-400 text-center">{error}</div>
+            <button
+              onClick={retry}
+              className="w-full px-3 py-1.5 rounded-lg text-2xs text-text-secondary hover:bg-white/6 hover:text-text-primary transition-all duration-200 ease-out"
+            >
+              重试
+            </button>
+          </div>
+        )}
+        {/* 空态 */}
+        {!loading && !error && filtered.length === 0 && (
+          <div className="px-2 py-4 text-2xs text-text-tertiary text-center">
+            {sessions.length === 0 ? '暂无会话，点击新建对话开始' : '未找到匹配会话'}
+          </div>
+        )}
+        {/* 列表态 */}
+        {!loading && !error && filtered.length > 0 && (
           filtered.map((s) => {
             const isActive = activeSession === s.id && view === 'chat'
+            const status = s.running ? 'running' : 'done'
             return (
               <button
                 key={s.id}
@@ -114,12 +188,12 @@ export function SideNav({ view, onViewChange }: SideNavProps) {
                   }`}
               >
                 <div className="flex items-center justify-between gap-2 mb-0.5">
-                  <span className="text-xs font-semibold truncate">{s.title}</span>
-                  <StatusDot status={s.status} active={isActive} />
+                  <span className="text-xs font-semibold truncate">{deriveTitle(s)}</span>
+                  <StatusDot status={status} active={isActive} />
                 </div>
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-2xs text-text-tertiary truncate">{s.preview}</span>
-                  <span className="text-2xs text-text-tertiary flex-shrink-0">{s.ts}</span>
+                  <span className="text-2xs text-text-tertiary truncate">{derivePreview(s)}</span>
+                  <span className="text-2xs text-text-tertiary flex-shrink-0">{formatRelativeTime(s.updatedAt)}</span>
                 </div>
               </button>
             )
@@ -136,8 +210,111 @@ export function SideNav({ view, onViewChange }: SideNavProps) {
           onClick={() => onViewChange('settings')}
         />
       </div>
+
+      {/* === 技能/插件浮层（统一 Tab 切换） === */}
+      {spOpen && (
+        <SkillsPluginsModal
+          tab={spTab}
+          onTabChange={setSpTab}
+          onClose={() => setSpOpen(false)}
+        />
+      )}
     </nav>
   )
+}
+
+/* ============== 技能/插件统一浮层 ============== */
+
+interface SkillsPluginsModalProps {
+  tab: SkillsPluginsTab
+  onTabChange: (t: SkillsPluginsTab) => void
+  onClose: () => void
+}
+
+/**
+ * 统一浮层：顶部 Tab 切换「技能 / 插件」，内嵌 SkillListPanel / MCPManagerPanel
+ * 非浮层模式（由本组件提供外层 modal 容器）。
+ */
+function SkillsPluginsModal({ tab, onTabChange, onClose }: SkillsPluginsModalProps) {
+  const tabs: { key: SkillsPluginsTab; label: string }[] = [
+    { key: 'skills', label: '技能' },
+    { key: 'plugins', label: '插件' },
+  ]
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in"
+      onClick={onClose}
+    >
+      <div
+        className="w-[680px] max-w-[94vw] h-[80vh] rounded-lg border border-white/10 bg-surface-elevated shadow-raised animate-scale-in flex flex-col overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* === 顶部 Tab 切换栏 === */}
+        <div className="flex items-center justify-between px-2 pt-2 border-b border-white/8">
+          <div className="flex items-center gap-0.5">
+            {tabs.map((t) => (
+              <button
+                key={t.key}
+                onClick={() => onTabChange(t.key)}
+                className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-t-lg transition-all duration-200 ease-out
+                  ${tab === t.key
+                    ? 'text-text-primary bg-white/6'
+                    : 'text-text-tertiary hover:text-text-secondary hover:bg-white/3'
+                  }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <button onClick={onClose} className="icon-btn !p-1 mr-1" title="关闭">
+            <CloseIcon />
+          </button>
+        </div>
+        {/* === Tab 内容（非浮层模式，占满剩余空间） === */}
+        <div className="flex-1 min-h-0 overflow-hidden">
+          {tab === 'skills' ? <SkillListPanel /> : <MCPManagerPanel />}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ============== Session 显示派生（无 title 字段，从消息/时间派生） ============== */
+
+/** 会话标题：取首条用户消息（截断），无消息时回退到 id 前 8 位 */
+function deriveTitle(s: Session): string {
+  const firstUser = s.messages.find((m) => m.role === 'user')
+  if (firstUser && firstUser.content.trim()) {
+    const line = firstUser.content.trim().split('\n')[0]
+    return line.length > 30 ? line.slice(0, 30) + '…' : line
+  }
+  return `会话 ${s.id.slice(0, 8)}`
+}
+
+/** 会话预览：取最后一条消息（截断） */
+function derivePreview(s: Session): string {
+  if (s.messages.length === 0) return ''
+  const last = s.messages[s.messages.length - 1]
+  const line = last.content.trim().split('\n')[0]
+  if (!line) return ''
+  return line.length > 40 ? line.slice(0, 40) + '…' : line
+}
+
+/** 相对时间：ISO -> 「刚刚 / N 分钟前 / N 小时前 / N 天前 / M/D」 */
+function formatRelativeTime(iso: string): string {
+  const then = new Date(iso).getTime()
+  if (Number.isNaN(then)) return ''
+  const diff = Math.max(0, Date.now() - then)
+  const sec = Math.floor(diff / 1000)
+  if (sec < 60) return '刚刚'
+  const min = Math.floor(sec / 60)
+  if (min < 60) return `${min} 分钟前`
+  const hr = Math.floor(min / 60)
+  if (hr < 24) return `${hr} 小时前`
+  const day = Math.floor(hr / 24)
+  if (day < 7) return `${day} 天前`
+  const d = new Date(iso)
+  return `${d.getMonth() + 1}/${d.getDate()}`
 }
 
 /* ============== 子组件 ============== */
@@ -233,6 +410,15 @@ function SettingsIcon() {
         strokeWidth="1.3"
         strokeLinecap="round"
       />
+    </svg>
+  )
+}
+
+function CloseIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+      <line x1="4" y1="4" x2="12" y2="12" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <line x1="12" y1="4" x2="4" y2="12" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
     </svg>
   )
 }

@@ -7,9 +7,11 @@ pub mod diffs;
 pub mod files;
 pub mod git;
 pub mod health;
+pub mod mcp;
 pub mod params;
 pub mod project;
 pub mod session;
+pub mod skills;
 pub mod todos;
 pub mod tools;
 // RAG 项目检索（P1）：rag.rs 位于 src/rag.rs（顶层），用 #[path] 显式指定
@@ -18,7 +20,7 @@ pub mod rag;
 // 代码沙箱执行（P1）
 pub mod sandbox;
 
-use axum::routing::{delete, get, post};
+use axum::routing::{delete, get, post, put};
 use axum::Router;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
@@ -91,6 +93,58 @@ pub fn build_router(state: SharedState) -> Router {
             "/config/permission",
             get(config_api::get_permission).put(config_api::set_permission),
         )
+        // === P2 完整设置页面后端 API ===
+        // 模型 & API 卡片
+        .route(
+            "/config/model-profiles",
+            get(config_api::get_model_profiles).put(config_api::set_model_profiles),
+        )
+        .route("/config/profiles", post(config_api::add_profile))
+        .route(
+            "/config/profiles/:id",
+            axum::routing::put(config_api::update_profile).delete(config_api::delete_profile),
+        )
+        .route("/config/profiles/:id/active", post(config_api::set_active_profile))
+        // RAG 卡片
+        .route(
+            "/config/rag",
+            get(config_api::get_rag_config).put(config_api::set_rag_config),
+        )
+        // 格式化卡片
+        .route(
+            "/config/formatter",
+            get(config_api::get_formatter_config)
+                .put(config_api::set_formatter_config),
+        )
+        // 缓存卡片
+        .route(
+            "/config/cache",
+            get(config_api::get_cache_config).put(config_api::set_cache_config),
+        )
+        .route("/config/cache/clear-session", post(config_api::clear_session_cache))
+        .route("/config/cache/clear-memory", post(config_api::clear_project_memory))
+        .route("/config/cache/stats", get(config_api::get_cache_stats))
+        // 外观卡片
+        .route(
+            "/config/appearance",
+            get(config_api::get_appearance).put(config_api::set_appearance),
+        )
+        // 快捷键卡片
+        .route(
+            "/config/shortcuts",
+            get(config_api::get_shortcuts)
+                .put(config_api::set_shortcuts)
+                .post(config_api::reset_shortcuts),
+        )
+        // 安全卡片
+        .route(
+            "/config/security",
+            get(config_api::get_security).put(config_api::set_security),
+        )
+        .route(
+            "/config/security/export-audit",
+            get(config_api::export_audit_log),
+        )
         // RAG 项目检索（P1）
         .route("/rag/index", get(rag::get_index).post(rag::build_index_handler))
         .route("/rag/recall", post(rag::recall_handler))
@@ -105,7 +159,37 @@ pub fn build_router(state: SharedState) -> Router {
         .route("/git/commit", post(git::git_commit))
         .route("/git/branch", post(git::git_branch))
         .route("/git/pr-review", post(git::git_pr_review))
-        .route("/git/log", get(git::git_log));
+        .route("/git/log", get(git::git_log))
+        // Skill 技能生态（P0）
+        // 注意：/skills/config、/skills/find、/skills/import、/skills/default-permission、/skills/agents-md
+        // 均为静态路径，必须在 /skills/:id 之前注册（axum 静态优先匹配）。
+        .route("/skills/config", get(skills::get_skills_config))
+        .route("/skills/find", post(skills::find_skill))
+        .route("/skills/import", post(skills::import_skill_pack))
+        .route("/skills/default-permission", post(skills::set_default_permission))
+        .route("/skills/agents-md", get(skills::get_agents_md).put(skills::update_agents_md))
+        .route("/skills", get(skills::list_skills).post(skills::create_skill))
+        .route("/skills/:id", get(skills::get_skill).delete(skills::delete_skill))
+        .route("/skills/:id/toggle", put(skills::toggle_skill))
+        .route("/skills/:id/enabled", put(skills::set_skill_enabled))
+        .route("/skills/:id/export", post(skills::export_skill))
+        // MCP 插件生态（P1）
+        // 静态路径优先：/mcp/services、/mcp/global-enabled、/mcp/high-risk/switch、/mcp/call 均在 /mcp/:id 之前。
+        .route("/mcp/services", get(mcp::list_mcp_services).post(mcp::add_mcp_service))
+        .route("/mcp/global-enabled", post(mcp::set_mcp_global_enabled))
+        .route(
+            "/mcp/high-risk/switch",
+            get(mcp::get_high_risk_switch).put(mcp::set_high_risk_switch),
+        )
+        .route("/mcp/call", post(mcp::call_mcp))
+        .route("/mcp", get(mcp::list_mcp).post(mcp::register_mcp))
+        .route("/mcp/:id", delete(mcp::delete_mcp))
+        .route("/mcp/:id/toggle", put(mcp::toggle_mcp))
+        .route("/mcp/:id/enabled", post(mcp::set_mcp_enabled))
+        .route("/mcp/:id/connect", post(mcp::connect_mcp))
+        .route("/mcp/:id/disconnect", post(mcp::disconnect_mcp))
+        // 顶层独立路由：模型档案列表（前端 modelProfilesApi.list）
+        .route("/model-profiles", get(config_api::list_model_profiles));
 
     Router::new()
         .route("/ping", get(health::ping))

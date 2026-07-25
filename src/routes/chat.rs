@@ -155,10 +155,45 @@ pub async fn start_chat(
         Some(ref s) if s.cache.as_ref().map(|c| !c.system_prefix.is_empty()).unwrap_or(false) => None,
         _ => Some(system_prefix),
     };
-    let messages = state
+    let mut messages = state
         .sessions
         .message_snapshot(&session_id, context_length, snapshot_system)
         .await?;
+
+    // P0 Skill 生态：skill_find 模糊匹配，命中时临时注入技能上下文（不修改第一层缓存）。
+    //   - 仅取 score > 0.5 的首个命中
+    //   - raw_markdown 追加到 system 消息末尾，本轮临时拼接，下一轮自动失效
+    //   - 解析 steps 中的 todo_text 推送代办
+    let skill_match_info: Option<crate::skills::SkillMatch> = {
+        let hits = state.skills.find(&req.message).await;
+        hits.into_iter().find(|h| h.score > 0.5)
+    };
+    let mut skill_todos_pushed: Option<Vec<crate::state::TodoItem>> = None;
+    if let Some(ref m) = skill_match_info {
+        if let Some(def) = state.skills.get_definition(&m.skill_id).await {
+            // 将 raw_markdown 追加到 system 消息末尾（本轮临时拼接）
+            if let Some(first) = messages.first_mut() {
+                if first.role == crate::deepseek::ChatRole::System {
+                    first.content.push_str("\n\n# 临时技能上下文\n");
+                    first.content.push_str(&def.raw_markdown);
+                }
+            }
+            // 解析 steps 中的 todo_text，推送代办
+            let todo_texts: Vec<String> = def
+                .steps
+                .iter()
+                .filter_map(|s| s.todo_text.clone())
+                .filter(|t| !t.is_empty())
+                .collect();
+            if !todo_texts.is_empty() {
+                let items = state
+                    .todos
+                    .add_batch(Some(session_id.clone()), todo_texts)
+                    .await;
+                skill_todos_pushed = Some(items);
+            }
+        }
+    }
 
     // 7. 发起 DeepSeek 流式请求
     let ds_cfg = state.deepseek_config().await;
@@ -185,6 +220,26 @@ pub async fn start_chat(
 
     // 8. 后台转发任务: DeepSeek 增量 -> SSE 事件, 累积内容, 结束后落地 + 推送 cache_stats
     let (tx_sse, mut rx_sse) = mpsc::channel::<Event>(64);
+
+    // P0 Skill 生态：在 DeepSeek 流之前推送 skill_match 事件与技能 todos（一次性）
+    if let Some(m) = skill_match_info {
+        let ev = Event::default()
+            .event("skill_match")
+            .data(json!({
+                "skillId": m.skill_id,
+                "skillName": m.skill_name,
+                "score": m.score,
+                "matchedKeywords": m.matched_keywords,
+            }).to_string());
+        let _ = tx_sse.send(ev).await;
+    }
+    if let Some(items) = skill_todos_pushed {
+        let ev = Event::default()
+            .event("todos")
+            .data(json!({ "items": items }).to_string());
+        let _ = tx_sse.send(ev).await;
+    }
+
     let sessions = state.sessions.clone();
     let todos_store = state.todos.clone();
     let sid = session_id.clone();
