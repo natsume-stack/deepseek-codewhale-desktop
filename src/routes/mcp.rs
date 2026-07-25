@@ -34,16 +34,33 @@ pub struct HighRiskBody {
     pub enabled: bool,
 }
 
-/// GET /api/mcp - 列出所有插件元信息+状态
+/// GET /api/mcp - 列出所有插件完整配置+状态
+///
+/// 返回 `plugins: Array<McpConfig & { status: McpStatus }>`，前端可直接读取 `plugin.meta.id` 等嵌套字段。
 pub async fn list_mcp(State(state): State<SharedState>) -> Json<Value> {
-    let metas = state.mcp.list_metas().await;
+    let configs = state.mcp.list_configs().await;
     let statuses = state.mcp.list_statuses().await;
     let high_risk_enabled = *state.mcp_high_risk_enabled.read().await;
+    use std::collections::HashMap as StdHashMap;
+    let mut status_map: StdHashMap<String, Value> = StdHashMap::new();
+    for s in &statuses {
+        status_map.insert(s.id.clone(), serde_json::to_value(s).unwrap_or(Value::Null));
+    }
+    let plugins: Vec<Value> = configs
+        .iter()
+        .map(|c| {
+            let st = status_map.get(&c.meta.id).cloned().unwrap_or(Value::Null);
+            let mut obj = serde_json::to_value(c).unwrap_or(Value::Null);
+            if let Some(o) = obj.as_object_mut() {
+                o.insert("status".into(), st);
+            }
+            obj
+        })
+        .collect();
     Json(json!({
-        "plugins": metas,
-        "statuses": statuses,
+        "plugins": plugins,
         "highRiskEnabled": high_risk_enabled,
-        "total": metas.len(),
+        "total": plugins.len(),
     }))
 }
 

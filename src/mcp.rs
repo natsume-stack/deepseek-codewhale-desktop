@@ -188,6 +188,11 @@ impl McpStore {
             .collect()
     }
 
+    /// 列出所有插件完整配置（含 meta 嵌套 + command/url 等，供前端 /api/mcp 使用）
+    pub async fn list_configs(&self) -> Vec<McpConfig> {
+        self.configs.read().await.values().cloned().collect()
+    }
+
     /// 列出所有插件状态
     pub async fn list_statuses(&self) -> Vec<McpStatus> {
         self.statuses.read().await.values().cloned().collect()
