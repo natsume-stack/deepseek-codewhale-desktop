@@ -1,0 +1,96 @@
+# ============================================================
+# CodeWhale .gitignore
+# ============================================================
+
+# ---------- Rust ----------
+/target
+**/target
+**/*.rs.bk
+Cargo.lock.bak
+
+# ---------- Node / Frontend ----------
+frontend/node_modules
+frontend/dist
+frontend/dist-ssr
+frontend/.vite
+frontend/*.local
+frontend/src-tauri/binaries
+frontend/src-tauri/target
+frontend/src-tauri/gen/schemas
+*.tsbuildinfo
+.npm
+.pnp.*
+.yarn/*
+
+# ---------- .NET / WinUI3 ----------
+CodeWhale/bin
+CodeWhale/obj
+CodeWhale/.vs
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.rsuser
+*.pdb
+*.dll
+*.exe
+*.cache
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# ---------- Tauri ----------
+*.msi
+*.exe
+*.app
+*.dmg
+*.AppImage
+*.deb
+*.rpm
+frontend/src-tauri/WixTools/
+
+# ---------- 敏感配置 ----------
+.env
+.env.local
+.env.*.local
+config.toml
+*.secret
+*.key
+*.pem
+credentials.json
+
+# ---------- IDE ----------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.fleet/
+.cursor/
+
+# ---------- 操作系统 ----------
+.DS_Store
+Thumbs.db
+ehthumbs.db
+desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# ---------- 日志 / 临时 ----------
+*.log
+logs/
+tmp/
+temp/
+*.tmp
+*.bak
+
+# ---------- 构建工具 ----------
+build/
+out/
+coverage/
+*.lcov
+.nyc_output/
+
+# ---------- 其他 ----------
+.codewhale
+.codewhale-cache

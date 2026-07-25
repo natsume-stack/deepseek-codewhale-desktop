@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="CodeWhale.Views.ParameterPanel"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Loaded="ParameterPanel_Loaded">
+
+    <!-- 根 Grid：In-app Acrylic 背景 -->
+    <Grid>
+        <Grid.Background>
+            <AcrylicBrush
+                TintColor="{ThemeResource AppSidebarBgColor}"
+                TintOpacity="0.55"
+                FallbackColor="{ThemeResource AppSidebarBgColor}"/>
+        </Grid.Background>
+
+        <ScrollViewer Padding="0" VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="6" Padding="12,10,12,16">
+
+                <!-- ========== 顶部状态条 ========== -->
+                <Border Style="{StaticResource AppPanelHeaderStyle}"
+                        Padding="10,8"
+                        CornerRadius="4"
+                        BorderThickness="0">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <Ellipse x:Name="StatusDot" Grid.Column="0" Style="{StaticResource AppStatusDotStyle}"/>
+                        <TextBlock x:Name="StatusText"
+                                   Grid.Column="1"
+                                   Margin="8,0,0,0"
+                                   FontSize="12"
+                                   VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis"
+                                   Text="未连接"
+                                   Foreground="{ThemeResource AppTextSecondaryBrush}"/>
+                        <ProgressRing x:Name="StatusRing"
+                                      Grid.Column="2"
+                                      Width="14" Height="14"
+                                      IsActive="False"/>
+                    </Grid>
+                </Border>
+
+                <!-- ========== 后端连接分组 ========== -->
+                <Expander Header="后端连接"
+                          HorizontalAlignment="Stretch"
+                          HorizontalContentAlignment="Stretch"
+                          IsExpanded="True"
+                          Padding="0">
+                    <StackPanel Spacing="10" Padding="4,8,4,4">
+                        <TextBox x:Name="BackendUrlBox"
+                                 Header="后端地址"
+                                 PlaceholderText="http://127.0.0.1:8787"
+                                 IsSpellCheckEnabled="False"/>
+                        <PasswordBox x:Name="ApiKeyBox"
+                                     Header="DeepSeek API 密钥"
+                                     PlaceholderText="sk-..."/>
+                        <Button x:Name="TestConnectionButton"
+                                Click="TestConnection_Click"
+                                HorizontalAlignment="Stretch">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <FontIcon Glyph="&#xE73E;" FontSize="12"/>
+                                <TextBlock Text="测试连接"/>
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </Expander>
+
+                <!-- ========== 模型参数分组 ========== -->
+                <Expander Header="模型参数"
+                          HorizontalAlignment="Stretch"
+                          HorizontalContentAlignment="Stretch"
+                          IsExpanded="True"
+                          Padding="0">
+                    <StackPanel Spacing="10" Padding="4,8,4,4">
+                        <ComboBox x:Name="ModelSelector"
+                                  Header="模型"
+                                  HorizontalAlignment="Stretch"
+                                  SelectedIndex="0">
+                            <x:String>deepseek-chat</x:String>
+                            <x:String>deepseek-reasoner</x:String>
+                        </ComboBox>
+
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="推理强度" Style="{StaticResource CaptionTextBlockStyle}"
+                                       Foreground="{ThemeResource AppTextSecondaryBrush}"/>
+                            <RadioButtons x:Name="ReasoningEffortSelector" MaxColumns="2">
+                                <RadioButton Content="极低 (Minimal)" Tag="Minimal"/>
+                                <RadioButton Content="低 (Low)" Tag="Low"/>
+                                <RadioButton Content="中 (Medium)" Tag="Medium"/>
+                                <RadioButton Content="高 (High)" Tag="High"/>
+                            </RadioButtons>
+                        </StackPanel>
+
+                        <ToggleSwitch x:Name="CacheToggle"
+                                      Header="响应缓存"
+                                      OffContent="关"
+                                      OnContent="开"
+                                      IsOn="True"/>
+
+                        <NumberBox x:Name="ContextLengthBox"
+                                   Header="上下文消息数"
+                                   Minimum="1"
+                                   Maximum="200"
+                                   SpinButtonPlacementMode="Compact"
+                                   Value="20"/>
+                    </StackPanel>
+                </Expander>
+
+                <!-- ========== 会话管理分组 ========== -->
+                <Expander Header="会话管理"
+                          HorizontalAlignment="Stretch"
+                          HorizontalContentAlignment="Stretch"
+                          IsExpanded="False"
+                          Padding="0">
+                    <StackPanel Spacing="8" Padding="4,8,4,4">
+                        <Button x:Name="ResetSessionButton"
+                                Click="ResetSession_Click"
+                                HorizontalAlignment="Stretch">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <FontIcon Glyph="&#xE72C;" FontSize="12"/>
+                                <TextBlock Text="重置当前会话上下文"/>
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </Expander>
+
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

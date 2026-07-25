@@ -1,0 +1,166 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+ * 全局基础样式（Codex Desktop 风格 + Mica 透明窗口）
+ *
+ * 架构层级：
+ *   1. 系统窗口层（Tauri + Win32）：Mica 云母材质，已由 tauri.conf.json + lib.rs 启用
+ *   2. WebView 网页容器层（本文件）：html / body / #root 全透明
+ *   3. 前端组件层：
+ *      - 左侧 SideNav：透明，让 Mica 穿透
+ *      - 右侧工作区：不透明深色板块（surface.work），与左侧分层
+ *
+ * 严禁给 html / body / #root 加任何不透明背景，否则 Mica 会被完全遮挡。
+ * ============================================================ */
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    /* 关键：完全透明，让底层 Mica 穿透显示 */
+    background: transparent !important;
+    overflow: hidden;
+  }
+
+  body {
+    font-family: theme('fontFamily.sans');
+    font-size: theme('fontSize.base');
+    color: theme('colors.text.primary');
+    /* 黑体粗字风格 */
+    font-weight: 450;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    user-select: none;
+    letter-spacing: 0.01em;
+  }
+
+  /* 允许选择的区域（代码块、消息文本、输入框） */
+  input,
+  textarea,
+  [data-selectable='true'] {
+    user-select: text;
+  }
+
+  /* 轻量化滚动条（对齐 Codex） */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.18);
+  }
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  /* Tauri 自绘标题栏拖拽区域 */
+  [data-tauri-drag-region] {
+    -webkit-app-region: drag;
+  }
+  [data-tauri-drag-region] button,
+  [data-tauri-drag-region] a,
+  [data-tauri-drag-region] input,
+  [data-tauri-drag-region] select,
+  [data-tauri-drag-region] [data-no-drag] {
+    -webkit-app-region: no-drag;
+  }
+}
+
+/* ============================================================
+ * 通用组件类（Codex 风格：黑灰板块 + 蓝色点缀）
+ * ============================================================ */
+@layer components {
+  /* 面板顶部 Header（透明 + 底部细线） */
+  .panel-header {
+    @apply flex items-center justify-between px-4 py-3
+           border-b border-white/5;
+  }
+
+  .panel-title {
+    @apply text-sm font-medium text-text-primary;
+  }
+
+  /* 透明图标按钮（hover 时半透明浮起） */
+  .icon-btn {
+    @apply inline-flex items-center justify-center p-1.5 rounded
+           text-text-secondary
+           hover:bg-white/8 hover:text-text-primary
+           transition-all duration-200 ease-out cursor-pointer;
+  }
+  .icon-btn:disabled {
+    @apply opacity-30 cursor-not-allowed hover:bg-transparent hover:text-text-secondary;
+  }
+
+  /* 强调按钮（蓝色主色） */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded
+           bg-accent text-white text-xs font-medium
+           hover:bg-accent-hover hover:shadow-soft
+           transition-all duration-200 ease-out cursor-pointer;
+  }
+
+  /* 次级按钮（半透明浮层） */
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded
+           bg-white/8 text-text-primary text-xs font-medium
+           border border-white/8
+           hover:bg-white/12 hover:border-white/12
+           transition-all duration-200 ease-out cursor-pointer;
+  }
+
+  /* 危险按钮（柔和红色，非刺眼） */
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded
+           bg-rose-500/80 text-white text-xs font-medium
+           hover:bg-rose-500 transition-all duration-200 ease-out cursor-pointer;
+  }
+
+  /* 输入框（半透明浮层 + 聚焦蓝色光晕） */
+  .input-base {
+    @apply w-full px-3 py-1.5 rounded
+           bg-white/6 text-text-primary text-sm
+           border border-white/8 placeholder-text-tertiary
+           focus:outline-none focus:border-accent/50 focus:bg-white/8
+           transition-all duration-200 ease-out;
+  }
+
+  /* 工作区主板块（不透明深色圆角板块，与左侧 Mica 分层）
+   * 用法：包裹在 App.tsx 右侧工作区外层 */
+  .work-surface {
+    @apply rounded-xl bg-surface-work border border-surface-border;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18), 0 8px 24px rgba(0, 0, 0, 0.20);
+    overflow: hidden;
+  }
+
+  /* 通用浮层卡片（在工作区板块之上的轻量浮起）
+   * 注意：不加 backdrop-blur，避免模糊底层 */
+  .surface {
+    @apply rounded-lg bg-surface-elevated border border-surface-border;
+  }
+
+  .surface-raised {
+    @apply rounded-lg bg-surface-elevated border border-surface-border;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18), 0 8px 24px rgba(0, 0, 0, 0.20);
+  }
+
+  /* 悬浮分隔条（极简，hover 显示蓝色） */
+  .splitter {
+    @apply w-px flex-shrink-0 cursor-col-resize bg-white/5
+           hover:bg-accent/50 hover:w-[2px] transition-all duration-200 ease-out relative;
+  }
+  .splitter::before {
+    content: '';
+    @apply absolute inset-y-0 -inset-x-1;
+  }
+}

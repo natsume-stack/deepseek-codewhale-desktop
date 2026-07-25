@@ -1,0 +1,123 @@
+<UserControl
+    x:Class="CodeWhale.Views.ChatPanel"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:CodeWhale.Views.Controls"
+    Loaded="ChatPanel_Loaded">
+
+    <Grid Background="{ThemeResource AppBgBrush}">
+        <Grid.RowDefinitions>
+            <!-- 顶栏：标题 + Token 计数 + 清空 -->
+            <RowDefinition Height="Auto" />
+            <!-- 消息流 -->
+            <RowDefinition Height="*" />
+            <!-- Diff 预览面板（默认隐藏） -->
+            <RowDefinition Height="Auto" />
+            <!-- 底部输入栏 -->
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- ========== 顶栏 Header ========== -->
+        <Border Grid.Row="0" Style="{StaticResource AppPanelHeaderStyle}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- 左：图标 + 标题 -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <FontIcon Glyph="&#xE8BD;" FontSize="13"
+                              Foreground="{ThemeResource AppTextSecondaryBrush}"/>
+                    <TextBlock Text="对话"
+                               Style="{StaticResource AppPanelTitleStyle}"/>
+                    <Border Background="{ThemeResource AppLayerAltBrush}"
+                            CornerRadius="3"
+                            Padding="6,1"
+                            VerticalAlignment="Center">
+                        <TextBlock x:Name="TokenCountChip"
+                                   Text="0 tokens"
+                                   Style="{StaticResource CaptionTextBlockStyle}"
+                                   Foreground="{ThemeResource AppTextTertiaryBrush}"
+                                   FontFamily="Cascadia Code, Consolas"/>
+                    </Border>
+                </StackPanel>
+
+                <!-- 右：清空按钮 -->
+                <Button Grid.Column="1" x:Name="ClearButton" Click="ClearButton_Click"
+                        Style="{StaticResource AppIconButtonStyle}"
+                        ToolTipService.ToolTip="清空对话">
+                    <FontIcon Glyph="&#xE74D;" FontSize="13"/>
+                </Button>
+            </Grid>
+        </Border>
+
+        <!-- ========== 消息流 ========== -->
+        <ScrollViewer Grid.Row="1"
+                      x:Name="MessagesScroll"
+                      Padding="16,12,16,12"
+                      VerticalScrollBarVisibility="Auto">
+            <StackPanel x:Name="MessagesPanel" Spacing="16">
+                <!-- 空状态（卡片化，对齐 Codex 引导风格） -->
+                <StackPanel x:Name="EmptyState"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Spacing="14"
+                            Padding="0,60,0,0">
+                    <FontIcon Glyph="&#xE9D9;" FontSize="48" HorizontalAlignment="Center"
+                              Foreground="{ThemeResource AppTextTertiaryBrush}"/>
+                    <TextBlock Text="开始与 CodeWhale 对话"
+                               HorizontalAlignment="Center"
+                               FontSize="15"
+                               Foreground="{ThemeResource AppTextSecondaryBrush}"/>
+                    <TextBlock Text="输入开发需求，或从左侧文件树加入上下文"
+                               Style="{StaticResource CaptionTextBlockStyle}"
+                               HorizontalAlignment="Center"
+                               Foreground="{ThemeResource AppTextTertiaryBrush}"/>
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- ========== Diff 预览面板（默认隐藏，由外部 ChatController 触发显示） ========== -->
+        <Border x:Name="DiffPanelContainer"
+                Grid.Row="2"
+                Background="{ThemeResource AppLayerBrush}"
+                BorderBrush="{ThemeResource AppDividerBrush}"
+                BorderThickness="0,1,0,0"
+                Height="240"
+                Visibility="Collapsed">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <Border Grid.Row="0" Style="{StaticResource AppPanelHeaderStyle}" Padding="14,8,14,6">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="代码变更预览" Style="{StaticResource AppPanelTitleStyle}"/>
+                        <Button Grid.Column="1" x:Name="CloseDiffButton" Click="CloseDiffButton_Click"
+                                Style="{StaticResource AppIconButtonStyle}"
+                                ToolTipService.ToolTip="关闭预览">
+                            <FontIcon Glyph="&#xE711;" FontSize="12"/>
+                        </Button>
+                    </Grid>
+                </Border>
+                <Grid Grid.Row="1">
+                    <controls:DiffPreviewView x:Name="DiffPreview"/>
+                </Grid>
+            </Grid>
+        </Border>
+
+        <!-- ========== 底部输入栏 ========== -->
+        <Border Grid.Row="3"
+                Background="{ThemeResource AppLayerBrush}"
+                BorderBrush="{ThemeResource AppDividerBrush}"
+                BorderThickness="0,1,0,0"
+                Padding="16,10,16,14">
+            <controls:ChatInputBar x:Name="InputBar"/>
+        </Border>
+    </Grid>
+</UserControl>

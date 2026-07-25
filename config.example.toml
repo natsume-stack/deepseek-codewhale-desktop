@@ -1,0 +1,19 @@
+# CodeWhale Server 持久化配置示例
+# 实际文件位于: ~/.codewhale-server/config.toml (Windows: %APPDATA%\codewhale-server\config.toml)
+# 通过 PUT /api/config/deepseek 写入 Key 后会自动生成该文件。
+# 优先级: 此文件 > 环境变量 > 内置默认值。
+
+[server]
+host = "127.0.0.1"
+port = 8787
+
+[deepseek]
+api_key = "sk-your-deepseek-key"
+base_url = "https://api.deepseek.com/v1"
+# V4-Flash: deepseek-chat (快速); 推理: deepseek-reasoner
+model = "deepseek-chat"
+
+[inference]
+reasoningEffort = "medium"   # minimal | low | medium | high
+cacheEnabled = true
+contextLength = 20
