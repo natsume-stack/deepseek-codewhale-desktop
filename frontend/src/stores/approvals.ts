@@ -83,11 +83,17 @@ export const useApprovalsStore = create<ApprovalsState>((set, get) => ({
 
   decide: async (id, approved) => {
     try {
-      const item = await approvalsApi.decide(id, approved)
+      const r = await approvalsApi.decide(id, approved)
       set((s) => ({
-        approvals: s.approvals.map((a) => (a.id === id ? item : a)),
+        // 后端返回 { approval, executed, executionError, executionResult }，
+        // 本地列表中用 approval 字段替换原条目
+        approvals: s.approvals.map((a) => (a.id === id ? r.approval : a)),
       }))
-      return true
+      // 执行失败时把错误写入 store.error，便于 UI 提示
+      if (approved && r.executed === false && r.executionError) {
+        set({ error: r.executionError })
+      }
+      return r.executed !== false
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       set({ error: msg })

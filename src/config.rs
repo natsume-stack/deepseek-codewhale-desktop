@@ -196,7 +196,46 @@ impl AppConfig {
         }
 
         cfg.apply_env()?;
+        // 自动规范化 base_url（修复用户遗漏 /v1 后缀导致 502 的问题）
+        let fixed = cfg.normalize_deepseek_urls();
+        if fixed {
+            tracing::info!("DeepSeek base_url 已自动规范化，将落盘更新");
+            let _ = cfg.save();
+        }
         Ok(cfg)
+    }
+
+    /// 规范化 DeepSeek base_url：确保以 /v1 结尾（仅对 DeepSeek 官方域名生效）。
+    /// 同时修正 model_profiles 中相同问题的 profile。
+    /// 返回 true 表示有字段被修正（需落盘）。
+    pub fn normalize_deepseek_urls(&mut self) -> bool {
+        let mut changed = false;
+        // 修正主配置
+        let fixed_main = normalize_base_url(&self.deepseek.base_url);
+        if fixed_main != self.deepseek.base_url {
+            tracing::warn!(
+                "base_url 自动修正: {} -> {}",
+                self.deepseek.base_url,
+                fixed_main
+            );
+            self.deepseek.base_url = fixed_main;
+            changed = true;
+        }
+        // 修正 model_profiles
+        for p in &mut self.model_profiles.profiles {
+            let fixed = normalize_base_url(&p.base_url);
+            if fixed != p.base_url {
+                tracing::warn!(
+                    "profile {} base_url 自动修正: {} -> {}",
+                    p.id,
+                    p.base_url,
+                    fixed
+                );
+                p.base_url = fixed;
+                changed = true;
+            }
+        }
+        changed
     }
 
     /// 应用环境变量覆盖。
@@ -263,6 +302,7 @@ impl AppConfig {
         if let Some(m) = model {
             self.deepseek.model = m;
         }
+        self.normalize_deepseek_urls();
         self.save()
     }
 
@@ -285,6 +325,27 @@ pub(crate) fn mask_key(k: &str) -> String {
     let tail: String = k.chars().skip(len.saturating_sub(4)).collect();
     let masked = "*".repeat(len - 7);
     format!("{head}{masked}{tail}")
+}
+
+/// 规范化 DeepSeek 兼容 API 的 base_url：
+/// - 去除尾部斜杠
+/// - 若指向 DeepSeek 官方域名但缺少 `/v1` 后缀，自动追加
+/// - 对 OpenRouter / Volcengine / 自建网关等其他域名不强制追加
+pub fn normalize_base_url(url: &str) -> String {
+    let trimmed = url.trim_end_matches('/');
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    // 已含 /v1（或 /v2 等版本段）则跳过
+    if trimmed.ends_with("/v1") || trimmed.ends_with("/v2") {
+        return trimmed.to_string();
+    }
+    // 仅对 DeepSeek 官方域名自动补 /v1
+    if trimmed.contains("api.deepseek.com") {
+        format!("{trimmed}/v1")
+    } else {
+        trimmed.to_string()
+    }
 }
 
 /// 用于校验路径是否在允许的项目根目录下 (防止越权读写)。

@@ -94,6 +94,30 @@ export type ChatSseEvent =
 /* ============================================================
  * 前端 UI 派生状态（消息流中渲染用）
  * ============================================================ */
+
+/** 工具调用状态 */
+export type ToolCallStatus = 'running' | 'success' | 'failed'
+
+/** 单次 DSML 工具调用（Agent Loop 中产生） */
+export interface ToolCallEntry {
+  /** 前端临时 id */
+  localId: string
+  /** 工具名：read_file / list_files / search_files / write_file / edit_file / shell / git / ask_followup_question / attempt_completion */
+  name: string
+  /** 意图说明（AI 给出的人类可读描述） */
+  intent: string
+  /** 要求的权限等级 */
+  requiredPermission?: 'readOnly' | 'workspaceWrite' | 'fullAccess'
+  /** 参数对象 */
+  args?: Record<string, unknown>
+  /** 执行状态 */
+  status: ToolCallStatus
+  /** 执行结果文本（成功为数据，失败为错误信息） */
+  result?: string
+  /** 时间戳（ms） */
+  ts: number
+}
+
 export interface ChatStreamMessage {
   /** 前端生成的临时 id，便于 React key 与流式更新 */
   localId: string
@@ -110,6 +134,10 @@ export interface ChatStreamMessage {
   ts: number
   /** 是否折叠显示（P1：MessageItem 操作工具栏触发） */
   folded?: boolean
+  /** Agent Loop 产生的工具调用列表（按时间顺序） */
+  toolCalls?: ToolCallEntry[]
+  /** 是否为任务收尾消息（attempt_completion） */
+  completion?: boolean
 }
 
 /* ============================================================

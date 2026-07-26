@@ -18,6 +18,7 @@ import { useMemo } from 'react'
 import type { ChatStreamMessage } from '../types'
 import { MarkdownLite } from './MarkdownLite'
 import { ReasoningBlock } from './ReasoningBlock'
+import { ToolCallCard } from './ToolCallCard'
 
 interface MessageItemProps {
   message: ChatStreamMessage
@@ -139,6 +140,15 @@ export function MessageItem({
             />
           )}
 
+          {/* 工具调用列表（Agent Loop 可视化） - 折叠态时也隐藏 */}
+          {!isFolded && message.toolCalls && message.toolCalls.length > 0 && (
+            <div className="my-1 space-y-0.5">
+              {message.toolCalls.map((tc) => (
+                <ToolCallCard key={tc.localId} call={tc} />
+              ))}
+            </div>
+          )}
+
           {/* 错误提示 */}
           {message.error && (
             <div className="px-3 py-2 rounded border border-diff-removed bg-diff-removed/30 text-xs text-diff-removed-text">
@@ -170,7 +180,7 @@ export function MessageItem({
                 </button>
               )}
             </div>
-          ) : !message.streaming && !message.error ? (
+          ) : !message.streaming && !message.error && (!message.toolCalls || message.toolCalls.length === 0) ? (
             <div className="text-sm text-text-tertiary italic">（空回复）</div>
           ) : null}
         </div>

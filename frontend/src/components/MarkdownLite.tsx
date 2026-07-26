@@ -11,6 +11,11 @@
  *
  * 不引入 react-markdown / remark 等重型依赖，符合项目"禁止冗余重型依赖"约束。
  * 代码块通过 CodeBlock 组件渲染，支持复制/应用/拒绝。
+ *
+ * DSML 块过滤（Agent Loop）：
+ *  - <tool>...</tool>、<arg>...</arg>、<todo>...</todo>、<tool_result>...</tool_result>
+ *    会被自动剥离，避免原始 XML 污染文本展示。
+ *  - 这些块的实际展示由 ToolCallCard 组件负责（基于 SSE 事件，而非文本解析）。
  */
 import { Fragment, type ReactNode } from 'react'
 import { CodeBlock } from './CodeBlock'
@@ -22,15 +27,64 @@ interface ParsedBlock {
   filename?: string
 }
 
+/**
+ * 剥离 DSML XML 块。
+ * 在流式累积中，未闭合的块（如 `<tool>` 但还没 `</tool>`）会被全部隐藏，
+ * 直到闭合标签到达后才作为完整块剥离——这避免流式过程中显示半截 XML。
+ */
+function stripDsmlBlocks(text: string): string {
+  // 已闭合的块：整体移除（含内容）
+  // 注意：先剥 tool_result / tool / todo，再剥零散 <arg> 标签
+  let out = text
+  // <tool>...</tool>（含属性）
+  out = out.replace(/<tool\b[^>]*>[\s\S]*?<\/tool>/g, '')
+  // <todo>...</todo>
+  out = out.replace(/<todo\b[^>]*>[\s\S]*?<\/todo>/g, '')
+  // <tool_result>...</tool_result>
+  out = out.replace(/<tool_result\b[^>]*>[\s\S]*?<\/tool_result>/g, '')
+  // <arg>...</arg>（独立出现的零散 arg 标签）
+  out = out.replace(/<arg\b[^>]*>[\s\S]*?<\/arg>/g, '')
+  // 未闭合的 <tool> 或 <todo> 或 <tool_result> 起始标签及之后内容：全部隐藏
+  // （流式中半截块不可展示）
+  out = out.replace(/<tool\b[^>]*>[\s\S]*$/g, '')
+  out = out.replace(/<todo\b[^>]*>[\s\S]*$/g, '')
+  out = out.replace(/<tool_result\b[^>]*>[\s\S]*$/g, '')
+  // 清理多余空行（剥离后可能留下连续空行）
+  out = out.replace(/\n{3,}/g, '\n\n')
+  return out
+}
+
+/**
+ * XSS 防护：校验链接 url 协议白名单。
+ * 仅允许 http/https/mailto/tel 协议，或无协议的相对路径（/path, #anchor, ./foo 等）。
+ * 拒绝 javascript:, data:, vbscript: 等危险协议。
+ */
+function isSafeUrl(url: string): boolean {
+  const trimmed = url.trim()
+  if (trimmed === '') return false
+  // 白名单协议
+  if (/^(https?:|mailto:|tel:)/i.test(trimmed)) return true
+  // 含有协议前缀但不在白名单（如 javascript:, data:, vbscript:）—— 拒绝
+  if (/^[a-z][a-z0-9+\-.]*:/i.test(trimmed)) return false
+  // 其他情况：无协议相对路径（如 /path, #anchor, ?query, ./foo, foo/bar）—— 安全
+  return true
+}
+
 /** 将原始 markdown 文本切分为 代码块 / 文本块 序列 */
 function parseBlocks(md: string): ParsedBlock[] {
+  // 先剥离 DSML 块，再走代码块解析
+  const cleaned = stripDsmlBlocks(md)
+  // 流式渲染：检测未闭合的代码 fence（``` 数量为奇数时，自动在末尾补一个闭合 fence）
+  // 仅用于本次渲染解析，不修改原始 content
+  const fenceCount = (cleaned.match(/```/g) || []).length
+  const parseTarget = fenceCount % 2 === 1 ? `${cleaned}\n\`\`\`\n` : cleaned
   const blocks: ParsedBlock[] = []
   const re = /```([^\n]*)\n([\s\S]*?)```/g
   let last = 0
   let m: RegExpExecArray | null
-  while ((m = re.exec(md)) !== null) {
+  while ((m = re.exec(parseTarget)) !== null) {
     if (m.index > last) {
-      blocks.push({ type: 'text', content: md.slice(last, m.index) })
+      blocks.push({ type: 'text', content: parseTarget.slice(last, m.index) })
     }
     const header = (m[1] || '').trim()
     const code = m[2] ?? ''
@@ -54,8 +108,8 @@ function parseBlocks(md: string): ParsedBlock[] {
     blocks.push({ type: 'code', content: code, lang, filename })
     last = re.lastIndex
   }
-  if (last < md.length) {
-    blocks.push({ type: 'text', content: md.slice(last) })
+  if (last < parseTarget.length) {
+    blocks.push({ type: 'text', content: parseTarget.slice(last) })
   }
   return blocks
 }
@@ -81,12 +135,24 @@ function renderInline(text: string, keyBase: string): ReactNode[] {
         </code>,
       )
     } else if (m[5] !== undefined && m[6] !== undefined) {
-      nodes.push(
-        <a key={`${keyBase}-a-${i}`} href={m[6]} target="_blank" rel="noreferrer noopener"
-           className="text-accent hover:text-accent-hover underline underline-offset-2">
-          {m[5]}
-        </a>,
-      )
+      // XSS 防护：校验 url 协议白名单；不安全时降级为纯文本（不渲染 href）
+      // 文本内容（m[5]）由 React 自动转义，无需手动处理
+      const linkText = m[5]
+      const rawUrl = m[6]
+      if (isSafeUrl(rawUrl)) {
+        nodes.push(
+          <a key={`${keyBase}-a-${i}`} href={rawUrl} target="_blank" rel="noopener noreferrer"
+             className="text-accent hover:text-accent-hover underline underline-offset-2">
+            {linkText}
+          </a>,
+        )
+      } else {
+        nodes.push(
+          <span key={`${keyBase}-a-${i}`} className="text-accent underline underline-offset-2 opacity-70">
+            {linkText}
+          </span>,
+        )
+      }
     }
     last = re.lastIndex
     i++

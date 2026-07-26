@@ -138,6 +138,13 @@ export function ChatPanel({ onToggleLeft, onToggleRight, leftCollapsed, rightCol
     const name = path.split(/[\\/]/).filter(Boolean).pop()
     setProjectName(name || 'CodeWhale')
     void gitApi.status().then((g) => setGitBranch(g.branch || 'main')).catch(() => setGitBranch('main'))
+
+    // 切换项目后必须重置当前对话视图：
+    //   - 旧会话的 system_prefix 已固化包含旧项目根路径
+    //   - 若不重置，新消息仍走旧会话，AI 看到的还是旧项目根
+    //   - clearView 会主动中断当前流 + 重置 sessionId + 清空消息
+    //   - 下次发送消息时会创建新会话，绑定当前最新的 project_root
+    useChatStore.getState().clearView()
   }, [])
 
   useEffect(() => {
@@ -270,7 +277,14 @@ export function ChatPanel({ onToggleLeft, onToggleRight, leftCollapsed, rightCol
     setPermissionMode(mode)
     if (mode !== 'custom') {
       try {
-        await permissionApi.set({ level: PERMISSION_LEVEL_MAP[mode] })
+        // 联动 approvalOnWrite / approvalOnShell：
+        //   - fullaccess：写/Shell 均不弹审批（用户已显式授予完全访问）
+        //   - auto (workspaceWrite)：写操作直接执行，Shell 仍弹审批（写权限内的安全操作自动放行）
+        //   - ask (readOnly)：所有写/Shell 均弹审批（最严格）
+        const level = PERMISSION_LEVEL_MAP[mode]
+        const approvalOnWrite = mode === 'ask'
+        const approvalOnShell = mode !== 'fullaccess'
+        await permissionApi.set({ level, approvalOnWrite, approvalOnShell })
       } catch {
       }
     }
@@ -334,7 +348,7 @@ export function ChatPanel({ onToggleLeft, onToggleRight, leftCollapsed, rightCol
 
       <div ref={scrollRef} className="flex-1 overflow-auto">
         {messages.length === 0 ? (
-          <EmptyState projectName={projectName} onQuickAction={handleSend} />
+          <EmptyState projectName={projectName} onQuickAction={handleSend} onPickProject={() => void handlePickProject()} />
         ) : (
           <div className="py-2">
             {messages.map((m) => (
@@ -377,6 +391,7 @@ export function ChatPanel({ onToggleLeft, onToggleRight, leftCollapsed, rightCol
           effort={(overrideReasoningEffort ?? defaultEffort) as EffortLevel}
           projectName={projectName}
           gitBranch={gitBranch}
+          onBranchChange={setGitBranch}
           permissionMode={permissionMode}
           onPermissionChange={handlePermissionChange}
           mcpPlugins={mcpPlugins}
@@ -422,6 +437,7 @@ interface ChatInputBarProps {
   effort: EffortLevel
   projectName: string
   gitBranch: string
+  onBranchChange?: (branch: string) => void
   permissionMode: PermissionMode
   onPermissionChange: (mode: PermissionMode) => void
   onPickProject: () => void
@@ -485,6 +501,7 @@ function ChatInputBar({
   effort,
   projectName,
   gitBranch,
+  onBranchChange,
   permissionMode,
   onPermissionChange,
   onPickProject,
@@ -515,6 +532,9 @@ function ChatInputBar({
   const [modelEffortOpen, setModelEffortOpen] = useState(false)
   const [effortPickerOpen, setEffortPickerOpen] = useState(false)
   const [cacheHitRate, setCacheHitRate] = useState<number | null>(null)
+  const [branchOpen, setBranchOpen] = useState(false)
+  const [branches, setBranches] = useState<string[]>([])
+  const [branchLoading, setBranchLoading] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -537,10 +557,12 @@ function ChatInputBar({
   const addMenuRef = useRef<HTMLDivElement>(null)
   const permMenuRef = useRef<HTMLDivElement>(null)
   const modelMenuRef = useRef<HTMLDivElement>(null)
+  const branchMenuRef = useRef<HTMLDivElement>(null)
 
   useClickOutside(addMenuRef, () => setAddMenuOpen(false))
   useClickOutside(permMenuRef, () => setPermOpen(false))
   useClickOutside(modelMenuRef, () => { setModelEffortOpen(false); setEffortPickerOpen(false) })
+  useClickOutside(branchMenuRef, () => setBranchOpen(false))
 
   const getPopoverPos = (btnRef: React.RefObject<HTMLButtonElement | null>) => {
     if (!btnRef.current) return { bottom: 60, left: 0 }
@@ -662,6 +684,37 @@ function ChatInputBar({
   const handleSlashClose = () => setSlashVisible(false)
   const handlePickerClose = () => setPickerVisible(false)
 
+  const handleOpenBranchPicker = async () => {
+    if (branchLoading) return
+    setBranchOpen(!branchOpen)
+    if (!branchOpen && branches.length === 0) {
+      setBranchLoading(true)
+      try {
+        const r = await gitApi.branch({ action: 'list' }) as { output?: string }
+        const list: string[] = String(r.output || '')
+          .split('\n')
+          .map((l) => l.replace(/^\*?\s*/, '').trim())
+          .filter(Boolean)
+        setBranches(list)
+      } catch {
+        setBranches([])
+      } finally {
+        setBranchLoading(false)
+      }
+    }
+  }
+
+  const handleBranchSwitch = async (name: string) => {
+    setBranchOpen(false)
+    if (name === gitBranch) return
+    try {
+      await gitApi.branch({ action: 'switch', name })
+      onBranchChange?.(name)
+    } catch {
+      // 切换失败静默处理
+    }
+  }
+
   const addMenuPos = getPopoverPos(addBtnRef)
   const permPos = getPopoverPos(permBtnRef)
   const modelPos = getPopoverPos(modelBtnRef)
@@ -678,9 +731,21 @@ function ChatInputBar({
         </div>
       ) : !hasHistory ? (
       <div className="absolute top-0 left-1/2 z-0 flex h-12 w-[88%] max-w-[720px] -translate-x-1/2 items-center justify-start gap-5 rounded-t-[23px] border border-white/8 border-b-0 bg-[#151516] px-6 pb-1 text-xs text-text-tertiary">
-        <span className="inline-flex min-w-0 items-center gap-1.5 truncate"><FolderIcon /><span className="max-w-[180px] truncate">{projectName}</span></span>
+        <button
+          onClick={onPickProject}
+          className="inline-flex min-w-0 items-center gap-1.5 truncate hover:text-text-primary transition-colors"
+          title="点击切换项目目录"
+        >
+          <FolderIcon /><span className="max-w-[180px] truncate">{projectName}</span>
+        </button>
         <span className="inline-flex flex-shrink-0 items-center gap-1.5"><MonitorIcon /><span>本地</span></span>
-        <span className="inline-flex min-w-0 items-center gap-1.5 truncate"><GitBranchIcon /><span className="max-w-[150px] truncate">{gitBranch}</span></span>
+        <button
+          onClick={() => void handleOpenBranchPicker()}
+          className="inline-flex min-w-0 items-center gap-1.5 truncate hover:text-text-primary transition-colors"
+          title="点击切换 Git 分支"
+        >
+          <GitBranchIcon /><span className="max-w-[150px] truncate">{gitBranch}</span>
+        </button>
       </div>
       ) : null}
 
@@ -923,6 +988,33 @@ function ChatInputBar({
         onClose={handlePickerClose}
         position={pickerPosition}
       />
+
+      {branchOpen && (
+        <div
+          ref={branchMenuRef}
+          className="fixed z-50 rounded-2xl bg-surface-elevated border border-surface-border shadow-raised p-1.5 animate-scale-in"
+          style={{ bottom: 60, left: '50%', transform: 'translateX(-50%)', minWidth: 220, maxHeight: 320, overflowY: 'auto' }}
+        >
+          <div className="text-xs text-text-tertiary px-3 py-2 font-semibold">切换分支</div>
+          {branchLoading ? (
+            <div className="px-3 py-3 text-sm text-text-tertiary text-center">加载中…</div>
+          ) : branches.length === 0 ? (
+            <div className="px-3 py-3 text-sm text-text-tertiary text-center">未找到分支（请先加载项目目录）</div>
+          ) : (
+            branches.map((b) => (
+              <button
+                key={b}
+                onClick={() => void handleBranchSwitch(b)}
+                className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-white/8 cursor-pointer transition-colors text-left ${b === gitBranch ? 'text-text-primary' : 'text-text-secondary'}`}
+              >
+                <GitBranchIcon />
+                <span className="text-sm flex-1 truncate">{b}</span>
+                {b === gitBranch && <span className="text-white text-xs">✓</span>}
+              </button>
+            ))
+          )}
+        </div>
+      )}
       </div>
     </div>
   )
@@ -1001,7 +1093,7 @@ function PermissionItem({
   )
 }
 
-function EmptyState({ projectName, onQuickAction }: { projectName: string; onQuickAction: (text: string) => void }) {
+function EmptyState({ projectName, onQuickAction, onPickProject }: { projectName: string; onQuickAction: (text: string) => void; onPickProject?: () => void }) {
   const quickActions = [
     { icon: <SearchIcon />, color: '#60A5FA', label: '探索并理解代码', prompt: '探索并理解当前代码库的结构与逻辑' },
     { icon: <HammerIcon />, color: '#C084FC', label: '构建新功能、应用或工具', prompt: '构建一个新功能/应用/工具' },
@@ -1015,6 +1107,15 @@ function EmptyState({ projectName, onQuickAction }: { projectName: string; onQui
       <h1 className="text-[30px] font-semibold text-text-primary mt-5 leading-tight">
         我们在 <span className="border-b border-dashed border-text-tertiary pb-1">{projectName}</span> 中构建什么？
       </h1>
+      {onPickProject && (
+        <button
+          onClick={onPickProject}
+          className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/8 hover:bg-white/12 border border-white/10 text-sm text-text-secondary hover:text-text-primary transition-colors"
+        >
+          <FolderIcon />
+          <span>选择项目目录</span>
+        </button>
+      )}
       <div className="grid grid-cols-2 gap-2 mt-6 max-w-2xl w-full">
         {quickActions.map((action, i) => (
           <button

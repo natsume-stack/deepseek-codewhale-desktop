@@ -32,6 +32,7 @@ bytes = "1"
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 dirs = "5"
+regex = "1"
 
 # Logging & errors
 tracing = "0.1"

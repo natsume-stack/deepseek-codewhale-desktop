@@ -32,6 +32,9 @@ pub struct DiffEntry {
     pub created_at: u64,
     /// Hunk 粒度列表（Option 兼容旧数据：未计算 hunks 时为 None）。
     pub hunks: Option<Vec<crate::diff::Hunk>>,
+    /// 关联审批 ID（apply 触发审批时填入，审批通过后回放用）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub approval_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -100,6 +103,7 @@ pub async fn register_diff(
         status: DiffStatus::Pending,
         created_at: chrono::Utc::now().timestamp() as u64,
         hunks,
+        approval_id: None,
     };
 
     let mut map = state.diffs.write().await;
@@ -146,6 +150,18 @@ pub async fn apply_diff(
         .await
         .ok_or_else(|| AppError::BadRequest("尚未加载项目目录".into()))?;
 
+    // 权限闸门：应用 Diff 视为写操作
+    //   - can_write=false（ReadOnly）→ 直接拒绝
+    //   - approvalOnWrite=true 且未达 FullAccess → 创建审批请求，返回 202
+    //   - approvalOnWrite=false 或 FullAccess → 直接写盘
+    let cfg = state.permission_config().await;
+    if !cfg.level.can_write() {
+        return Err(AppError::Forbidden(
+            "当前权限等级禁止应用 Diff（需 WorkspaceWrite 或 FullAccess）".into(),
+        ));
+    }
+    let need_approval = cfg.approval_on_write && !cfg.level.can_shell();
+
     let mut map = state.diffs.write().await;
     let entry = find_diff_mut(&mut map, &diff_id)?
         .ok_or_else(|| AppError::BadRequest(format!("Diff 不存在: {diff_id}")))?;
@@ -160,12 +176,52 @@ pub async fn apply_diff(
     let target = PathBuf::from(&entry.file_path);
     validate_within_root(&target, &root)?;
 
-    // 确保父目录存在
+    // 需审批：创建审批请求并返回 202，不写盘
+    if need_approval {
+        let file_path = entry.file_path.clone();
+        let diff_id_clone = diff_id.clone();
+        let content_clone = entry.modified_content.clone();
+        let target_clone = target.clone();
+        let detail = format!(
+            "应用 Diff 修改文件: {file_path}\n操作: 覆盖写入 modified_content（{} 字节）",
+            entry.modified_content.len()
+        );
+        // 携带 pending_action：审批通过后由 decide_approval 自动写盘
+        let approval = state
+            .approvals
+            .create_with_action(
+                crate::state::ApprovalKind::FileWrite,
+                format!("应用 Diff: {file_path}"),
+                Some(detail),
+                None,
+                Some(crate::state::PendingAction::ApplyDiff {
+                    diff_id: diff_id_clone.clone(),
+                    file_path: target_clone,
+                    content: content_clone,
+                }),
+            )
+            .await;
+        entry.approval_id = Some(approval.id.clone());
+        tracing::info!(
+            "Diff 应用等待审批: id={}, file={}, approvalId={}",
+            diff_id_clone,
+            file_path,
+            approval.id
+        );
+        return Ok(Json(json!({
+            "id": diff_id_clone,
+            "filePath": file_path,
+            "status": "pending_approval",
+            "approvalId": approval.id,
+            "needApproval": true,
+        })));
+    }
+
+    // 无需审批：直接写盘
     if let Some(p) = target.parent() {
         std::fs::create_dir_all(p)
             .map_err(|e| AppError::BadRequest(format!("创建父目录失败: {e}")))?;
     }
-
     std::fs::write(&target, &entry.modified_content)
         .map_err(|e| AppError::BadRequest(format!("应用 Diff 失败: {e}")))?;
 
@@ -176,6 +232,7 @@ pub async fn apply_diff(
         "id": diff_id,
         "filePath": entry.file_path,
         "status": "applied",
+        "needApproval": false,
     })))
 }
 
@@ -215,6 +272,14 @@ pub async fn revert_diff(
         .project_root()
         .await
         .ok_or_else(|| AppError::BadRequest("尚未加载项目目录".into()))?;
+
+    // 权限闸门：撤销 Diff 会回写磁盘或删除文件，ReadOnly 禁止
+    let cfg = state.permission_config().await;
+    if !cfg.level.can_write() {
+        return Err(AppError::Forbidden(
+            "当前权限等级禁止撤销 Diff（需 WorkspaceWrite 或 FullAccess）".into(),
+        ));
+    }
 
     let mut map = state.diffs.write().await;
     let entry = find_diff_mut(&mut map, &diff_id)?
@@ -269,6 +334,14 @@ pub async fn apply_all_diffs(
         .project_root()
         .await
         .ok_or_else(|| AppError::BadRequest("尚未加载项目目录".into()))?;
+
+    // 权限闸门：批量应用 Diff 会写文件，ReadOnly 禁止
+    let cfg = state.permission_config().await;
+    if !cfg.level.can_write() {
+        return Err(AppError::Forbidden(
+            "当前权限等级禁止应用 Diff（需 WorkspaceWrite 或 FullAccess）".into(),
+        ));
+    }
 
     let session_id = body.session_id.clone().unwrap_or_else(|| "default".to_string());
 
@@ -338,6 +411,14 @@ pub async fn apply_hunk_handler(
         .project_root()
         .await
         .ok_or_else(|| AppError::BadRequest("尚未加载项目目录".into()))?;
+
+    // 权限闸门：应用 hunk 会写文件，ReadOnly 禁止
+    let cfg = state.permission_config().await;
+    if !cfg.level.can_write() {
+        return Err(AppError::Forbidden(
+            "当前权限等级禁止应用 Diff（需 WorkspaceWrite 或 FullAccess）".into(),
+        ));
+    }
 
     let mut map = state.diffs.write().await;
     let entry = find_diff_mut(&mut map, &diff_id)?

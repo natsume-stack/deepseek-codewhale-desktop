@@ -46,7 +46,8 @@ export const useTodosStore = create<TodosState>((set, get) => ({
   sessionId: null,
 
   fetchAll: async () => {
-    set({ loading: true, error: null, sessionId: null })
+    // P0 修复跨会话污染：切换数据源时立即清空，避免旧会话数据闪烁
+    set({ loading: true, error: null, sessionId: null, todos: [] })
     try {
       const r = await todosApi.list()
       set({ todos: r.todos, loading: false })
@@ -57,7 +58,8 @@ export const useTodosStore = create<TodosState>((set, get) => ({
   },
 
   fetchBySession: async (sessionId) => {
-    set({ loading: true, error: null, sessionId })
+    // P0 修复跨会话污染：切换会话时立即清空，避免旧会话数据闪烁
+    set({ loading: true, error: null, sessionId, todos: [] })
     try {
       const r = await todosApi.listBySession(sessionId)
       set({ todos: r.todos, loading: false })

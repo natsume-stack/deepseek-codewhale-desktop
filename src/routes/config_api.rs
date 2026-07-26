@@ -335,6 +335,7 @@ pub async fn set_active_profile(
     cfg.deepseek.api_key = api_key;
     cfg.deepseek.base_url = profile.base_url;
     cfg.deepseek.model = profile.model;
+    cfg.normalize_deepseek_urls();
     cfg.save()?;
     drop(cfg);
     Ok(Json(json!({ "ok": true, "activeProfileId": id })))

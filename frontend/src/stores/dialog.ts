@@ -15,6 +15,9 @@ import { create } from 'zustand'
 
 type DialogKind = 'prompt' | 'confirm' | 'alert'
 
+/** Dialog 超时时间（ms）：5 分钟无响应自动 reject，避免 Promise 永久悬挂 */
+const DIALOG_TIMEOUT_MS = 5 * 60 * 1000
+
 interface BaseConfig {
   title: string
   message?: string
@@ -33,47 +36,82 @@ interface BaseConfig {
 interface DialogState {
   _current: (BaseConfig & { kind: DialogKind }) | null
   _resolve: ((v: string | boolean | null) => void) | null
+  _reject: ((e: Error) => void) | null
+  _timer: ReturnType<typeof setTimeout> | null
 
   prompt: (cfg: BaseConfig) => Promise<string | null>
   confirm: (cfg: BaseConfig) => Promise<boolean>
   alert: (cfg: BaseConfig) => Promise<void>
   _close: (value: string | boolean | null) => void
+  /** 异常终止当前 Dialog：reject pending Promise 并清理状态（用于 unmount / 超时） */
+  _fail: (reason: string) => void
 }
 
 export const useDialogStore = create<DialogState>((set, get) => ({
   _current: null,
   _resolve: null,
+  _reject: null,
+  _timer: null,
 
   prompt: (cfg) =>
-    new Promise<string | null>((resolve) => {
+    new Promise<string | null>((resolve, reject) => {
+      // 若已有 Dialog 打开，先 fail 旧的，避免旧 Promise 悬挂
+      if (get()._current) get()._fail('Dialog replaced')
+      const timer = setTimeout(() => {
+        useDialogStore.getState()._fail('Dialog timeout')
+      }, DIALOG_TIMEOUT_MS)
       set({
         _current: { ...cfg, kind: 'prompt' },
         _resolve: resolve as (v: string | boolean | null) => void,
+        _reject: reject,
+        _timer: timer,
       })
     }),
 
   confirm: (cfg) =>
-    new Promise<boolean>((resolve) => {
+    new Promise<boolean>((resolve, reject) => {
+      if (get()._current) get()._fail('Dialog replaced')
+      const timer = setTimeout(() => {
+        useDialogStore.getState()._fail('Dialog timeout')
+      }, DIALOG_TIMEOUT_MS)
       set({
         _current: { ...cfg, kind: 'confirm' },
         _resolve: resolve as (v: string | boolean | null) => void,
+        _reject: reject,
+        _timer: timer,
       })
     }),
 
   alert: (cfg) =>
-    new Promise<void>((resolve) => {
+    new Promise<void>((resolve, reject) => {
+      if (get()._current) get()._fail('Dialog replaced')
+      const timer = setTimeout(() => {
+        useDialogStore.getState()._fail('Dialog timeout')
+      }, DIALOG_TIMEOUT_MS)
       set({
         _current: { ...cfg, kind: 'alert' },
         _resolve: () => {
           resolve()
         },
+        _reject: reject,
+        _timer: timer,
       })
     }),
 
   _close: (value) => {
     const r = get()._resolve
-    set({ _current: null, _resolve: null })
+    const t = get()._timer
+    if (t) clearTimeout(t)
+    set({ _current: null, _resolve: null, _reject: null, _timer: null })
     r?.(value)
+  },
+
+  _fail: (reason) => {
+    const r = get()._reject
+    const t = get()._timer
+    if (t) clearTimeout(t)
+    set({ _current: null, _resolve: null, _reject: null, _timer: null })
+    if (r) r(new Error(reason))
   },
 }))
 

@@ -13,7 +13,7 @@
  */
 import { forwardRef, useMemo, useRef, useState } from 'react'
 import { computeDiff, toDualPane, type DiffRow } from '../lib/diff'
-import { BASE, ApiError } from '../lib/api'
+import { BASE, ApiError, fetchWithTimeout } from '../lib/api'
 import type { DiffEntry } from '../types'
 
 /* ============== Hunk 本地类型（避免依赖 types.ts 扩展） ============== */
@@ -35,7 +35,7 @@ interface Hunk {
 
 /* ============== Hunk 粒度 API 辅助函数（避免依赖 api.ts 扩展） ============== */
 async function applyHunk(diffId: string, hunkIndex: number): Promise<unknown> {
-  const resp = await fetch(
+  const resp = await fetchWithTimeout(
     `${BASE}/diffs/${encodeURIComponent(diffId)}/hunks/${hunkIndex}/apply`,
     { method: 'POST' },
   )
@@ -44,7 +44,7 @@ async function applyHunk(diffId: string, hunkIndex: number): Promise<unknown> {
 }
 
 async function rejectHunk(diffId: string, hunkIndex: number): Promise<unknown> {
-  const resp = await fetch(
+  const resp = await fetchWithTimeout(
     `${BASE}/diffs/${encodeURIComponent(diffId)}/hunks/${hunkIndex}/reject`,
     { method: 'POST' },
   )

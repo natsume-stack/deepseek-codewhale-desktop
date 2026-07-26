@@ -33,6 +33,7 @@ import { DialogHost } from './components/DialogHost'
 import { ApprovalDialog } from './components/ApprovalDialog'
 import { useFileTreeStore } from './stores/fileTree'
 import { useChatStore } from './stores/chat'
+import { useSessionsStore } from './stores/sessions'
 import { configApi, projectApi } from './lib/api'
 
 export type NavView = 'chat' | 'settings'
@@ -87,16 +88,25 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
 
-  /** 切换会话：加载后端历史。会话入口保留在左侧「最近」列表。 */
+  /** 切换会话：加载后端历史。会话入口保留在左侧「最近」列表。
+   *  Tab 形如 tab_xxx 是占位 Tab（新建未发送），首次发送时由后端创建会话；
+   *  非占位 Tab 走后端 switchSession 加载历史。
+   */
   const handleSessionSwitch = (id: string) => {
     if (!id.startsWith('tab_')) {
       void useChatStore.getState().switchSession(id).catch(() => {})
+      // 同步 sessions store 的 activeTab，保持 Tab 高亮一致
+      useSessionsStore.getState().switchTo(id)
     }
   }
 
-  /** 新建会话：清空当前对话视图，首次发送时由后端创建会话。 */
+  /** 新建会话：清空当前对话视图，并在 SessionTabs 创建一个占位 Tab。
+   *  占位 Tab 在首次发送消息后由后端返回的 sessionId 替换为真实会话 ID。
+   */
   const handleNewSession = () => {
     useChatStore.getState().clearView()
+    // 在 Tab 栏追加一个占位 Tab，UI 上立即可见
+    useSessionsStore.getState().openNew()
   }
 
   return (

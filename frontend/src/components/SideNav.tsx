@@ -14,12 +14,13 @@
  * 新增「技能/插件」入口因受文件写权限约束无法扩展 App.tsx 的 NavView 类型，
  * 故采用本地模态浮层（modal）形式承载 SkillListPanel / MCPManagerPanel。
  */
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import type { NavView } from '../App'
 import { SETTINGS_SECTIONS, type SettingsSection } from './SettingsPage'
 import { SkillListPanel } from './SkillListPanel'
 import { MCPManagerPanel } from './MCPManagerPanel'
 import { sessionsApi } from '../lib/api'
+import { useChatStore } from '../stores/chat'
 import type { Session } from '../types'
 
 interface SideNavProps {
@@ -45,43 +46,48 @@ export function SideNav({ view, onViewChange, onNewSession, onSessionSelect, set
   /** 浮层内当前子 Tab */
   const [spTab, setSpTab] = useState<SkillsPluginsTab>('skills')
 
+  // 订阅 chat store 的 sessionId：当后端通过 SSE 创建新会话时，
+  // sessionId 会从 null 变为非空，此时需要刷新左侧会话列表。
+  const chatSessionId = useChatStore((s) => s.sessionId)
+  const lastRefreshedSid = useRef<string | null>(null)
+
   // 真实拉取会话列表
-  useEffect(() => {
-    let mounted = true
+  const fetchSessions = (opts?: { selectFirst?: boolean }) => {
     setLoading(true)
     sessionsApi.list()
       .then((res) => {
-        if (!mounted) return
         setSessions(res.sessions)
         setError(null)
         // 默认选中第一个（仅当当前未选中时）
-        setActiveSession((prev) => prev ?? (res.sessions[0]?.id ?? null))
-      })
-      .catch((e) => {
-        if (!mounted) return
-        setError(e instanceof Error ? e.message : '加载会话失败')
-        setSessions([])
-      })
-      .finally(() => {
-        if (mounted) setLoading(false)
-      })
-    return () => { mounted = false }
-  }, [])
-
-  // 重试加载
-  const retry = () => {
-    setLoading(true)
-    setError(null)
-    sessionsApi.list()
-      .then((res) => {
-        setSessions(res.sessions)
-        setActiveSession((prev) => prev ?? (res.sessions[0]?.id ?? null))
+        if (opts?.selectFirst) {
+          setActiveSession((prev) => prev ?? (res.sessions[0]?.id ?? null))
+        }
       })
       .catch((e) => {
         setError(e instanceof Error ? e.message : '加载会话失败')
         setSessions([])
       })
       .finally(() => setLoading(false))
+  }
+
+  useEffect(() => {
+    fetchSessions({ selectFirst: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // 当 chat store 的 sessionId 变化（新会话创建）时刷新会话列表
+  useEffect(() => {
+    if (!chatSessionId) return
+    if (lastRefreshedSid.current === chatSessionId) return
+    lastRefreshedSid.current = chatSessionId
+    setActiveSession(chatSessionId)
+    fetchSessions()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatSessionId])
+
+  // 重试加载
+  const retry = () => {
+    fetchSessions({ selectFirst: true })
   }
 
   // 基于真实数据过滤（title / preview / id 任一匹配）
@@ -216,6 +222,7 @@ export function SideNav({ view, onViewChange, onNewSession, onSessionSelect, set
           filtered.map((s, index) => {
             const isActive = activeSession === s.id && view === 'chat'
             const status = s.running ? 'running' : 'done'
+            const projectTag = deriveProjectTag(s)
             return (
               <button
                 key={s.id}
@@ -232,7 +239,12 @@ export function SideNav({ view, onViewChange, onNewSession, onSessionSelect, set
                 style={{ animationDelay: `${index * 30}ms`, animationFillMode: 'both' }}
               >
                 <span className="min-w-0 flex-1 text-xs truncate">{deriveTitle(s)}</span>
-                  <StatusDot status={status} active={isActive} />
+                {projectTag && (
+                  <span className="flex-shrink-0 text-2xs text-text-tertiary bg-white/5 rounded-full px-1.5 py-0.5 max-w-[80px] truncate" title={s.projectRoot}>
+                    {projectTag}
+                  </span>
+                )}
+                <StatusDot status={status} active={isActive} />
               </button>
             )
           })
@@ -279,7 +291,7 @@ function SkillsPluginsModal({ tab, onTabChange, onClose }: SkillsPluginsModalPro
   ]
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-fade-in"
       onClick={onClose}
     >
       <div
@@ -319,6 +331,13 @@ function SkillsPluginsModal({ tab, onTabChange, onClose }: SkillsPluginsModalPro
 }
 
 /* ============== Session 显示派生（无 title 字段，从消息/时间派生） ============== */
+
+/** 从 projectRoot 提取项目名标签（取最后一级目录名） */
+function deriveProjectTag(s: Session): string {
+  if (!s.projectRoot) return ''
+  const parts = s.projectRoot.split(/[\\/]/).filter(Boolean)
+  return parts[parts.length - 1] || ''
+}
 
 /** 会话标题：取首条用户消息（截断），无消息时回退到 id 前 8 位 */
 function deriveTitle(s: Session): string {

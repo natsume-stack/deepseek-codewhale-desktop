@@ -117,7 +117,8 @@ impl TodoStore {
 
     /// 新增代办任务，返回创建后的条目。
     pub async fn add(&self, session_id: Option<String>, text: String, source: Option<String>) -> TodoItem {
-        let id = format!("todo_{}", chrono::Utc::now().timestamp_millis());
+        // P0 修复：使用 UUID 替代毫秒时间戳，避免批量添加时 ID 碰撞
+        let id = format!("todo_{}", uuid::Uuid::new_v4());
         let now = Utc::now();
         let item = TodoItem {
             id: id.clone(),
@@ -216,11 +217,41 @@ pub struct ApprovalRequest {
     /// 操作描述（如文件路径、命令文本）。
     pub description: String,
     /// 详细内容（如待写入的文件内容、命令完整文本）。
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
     /// 绑定的会话 ID。
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
     pub status: ApprovalStatus,
     pub created_at: DateTime<Utc>,
+    /// 关联的待执行动作（审批通过后由 decide_approval 路由回放执行）。
+    /// 不序列化到前端（含文件内容/命令参数，避免泄露）。
+    #[serde(skip)]
+    pub pending_action: Option<PendingAction>,
+}
+
+/// 审批通过后待执行的动作。
+///
+/// 设计：审批创建时由各路由（diffs/git/sandbox/tools）填充，
+/// decide_approval 在批准时取出并执行。失败不影响审批状态，仅记录 last_error。
+#[derive(Debug, Clone)]
+pub enum PendingAction {
+    /// 应用 Diff：写盘指定文件内容。
+    ApplyDiff {
+        diff_id: String,
+        file_path: std::path::PathBuf,
+        content: String,
+    },
+    /// 执行 Git 命令（如 commit / branch create / branch delete）。
+    GitExec {
+        args: Vec<String>,
+    },
+    /// 执行 Shell 命令（沙箱）。
+    ShellExec {
+        program: String,
+        args: Vec<String>,
+        cwd: std::path::PathBuf,
+    },
 }
 
 /// 审批存储：内存队列。Agent 发起操作 → 创建审批 → 等待用户决定。
@@ -242,7 +273,19 @@ impl ApprovalStore {
         detail: Option<String>,
         session_id: Option<String>,
     ) -> ApprovalRequest {
-        let id = format!("appr_{}", chrono::Utc::now().timestamp_millis());
+        self.create_with_action(kind, description, detail, session_id, None).await
+    }
+
+    /// 创建带待执行动作的审批请求（审批通过后由 decide_approval 回放）。
+    pub async fn create_with_action(
+        &self,
+        kind: ApprovalKind,
+        description: String,
+        detail: Option<String>,
+        session_id: Option<String>,
+        pending_action: Option<PendingAction>,
+    ) -> ApprovalRequest {
+        let id = format!("appr_{}", uuid::Uuid::new_v4());
         let req = ApprovalRequest {
             id: id.clone(),
             kind,
@@ -251,6 +294,7 @@ impl ApprovalStore {
             session_id,
             status: ApprovalStatus::Pending,
             created_at: Utc::now(),
+            pending_action,
         };
         self.inner.lock().await.insert(id, req.clone());
         req
@@ -279,8 +323,10 @@ impl ApprovalStore {
         self.inner.lock().await.get(id).cloned()
     }
 
-    /// 作出审批决定（批准/拒绝）。
-    pub async fn decide(&self, id: &str, approved: bool) -> Option<ApprovalRequest> {
+    /// 作出审批决定（批准/拒绝）。返回 (审批条目, 待执行动作)。
+    /// 待执行动作仅在 approved=true 且原请求含 pending_action 时返回 Some，
+    /// 由调用方负责回放执行。
+    pub async fn decide(&self, id: &str, approved: bool) -> Option<(ApprovalRequest, Option<PendingAction>)> {
         let mut map = self.inner.lock().await;
         let req = map.get_mut(id)?;
         req.status = if approved {
@@ -288,6 +334,12 @@ impl ApprovalStore {
         } else {
             ApprovalStatus::Rejected
         };
-        Some(req.clone())
+        // 批准时取出 pending_action（避免重复执行）
+        let action = if approved {
+            req.pending_action.take()
+        } else {
+            None
+        };
+        Some((req.clone(), action))
     }
 }

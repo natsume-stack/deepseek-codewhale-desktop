@@ -18,6 +18,14 @@ export function DialogHost() {
     }
   }, [current])
 
+  // 组件 unmount 时（路由切换 / 父组件卸载 / 面板关闭等），
+  // reject 所有 pending Promise，避免调用方 `await dialog.prompt(...)` 永久挂起
+  useEffect(() => {
+    return () => {
+      useDialogStore.getState()._fail('Dialog unmounted')
+    }
+  }, [])
+
   if (!current) return null
 
   const isPrompt = current.kind === 'prompt'
@@ -53,7 +61,7 @@ export function DialogHost() {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-fade-in"
       onKeyDown={handleKey}
       onClick={handleCancel}
     >

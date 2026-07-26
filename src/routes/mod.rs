@@ -20,9 +20,10 @@ pub mod rag;
 // 代码沙箱执行（P1）
 pub mod sandbox;
 
+use axum::http::{header, HeaderName, HeaderValue, Method};
 use axum::routing::{delete, get, post, put};
 use axum::Router;
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::trace::TraceLayer;
 
 use crate::state::SharedState;
@@ -198,9 +199,27 @@ pub fn build_router(state: SharedState) -> Router {
         .layer(TraceLayer::new_for_http())
         .layer(
             CorsLayer::new()
-                .allow_origin(Any)
-                .allow_methods(Any)
-                .allow_headers(Any),
+                // 精确白名单 origin：开发服务器 + Tauri 桌面壳（Windows tauri://localhost / https://tauri.localhost）
+                .allow_origin(AllowOrigin::list([
+                    "http://localhost:5173".parse::<HeaderValue>().unwrap(),
+                    "tauri://localhost".parse::<HeaderValue>().unwrap(),
+                    "https://tauri.localhost".parse::<HeaderValue>().unwrap(),
+                ]))
+                // 仅放行业务实际使用的 HTTP 方法
+                .allow_methods([
+                    Method::GET,
+                    Method::POST,
+                    Method::PUT,
+                    Method::DELETE,
+                    Method::PATCH,
+                    Method::OPTIONS,
+                ])
+                // 仅放行业务实际使用的请求头
+                .allow_headers([
+                    header::CONTENT_TYPE,
+                    header::AUTHORIZATION,
+                    HeaderName::from_static("x-session-id"),
+                ]),
         )
         .with_state(state)
 }

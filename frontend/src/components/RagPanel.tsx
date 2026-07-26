@@ -16,61 +16,23 @@
  *
  * 视觉：与 ChangesTab 风格一致，圆角 8px 半透明卡片。
  *
- * 依赖 Agent 4 提供 ragApi（recall / indexStatus / rebuild / clear）。
- * 在 Agent 4 完成前，使用 runtime 防御兜底，避免崩溃。
+ * 依赖：ragApi（getIndex / buildIndex / recall / clear）+ types.ts 中的 RagIndex / RagRecall / RagChunk。
  */
 import { useCallback, useEffect, useState } from 'react'
 import { ragApi } from '../lib/api'
-
-/* ============== 本地类型定义 ==============
- * 与 Agent 4 在 types.ts 中追加的 RagRecall / RagIndex 形状对齐；
- * 此处定义仅为本组件内部使用，避免依赖未完成的类型扩展。
- */
-interface RagRecall {
-  id: string
-  filePath: string
-  startLine?: number
-  endLine?: number
-  content: string
-  tokens?: number
-  score?: number
-}
-
-interface RagIndex {
-  fileCount: number
-  tokenCount: number
-  lastBuiltAt?: number
-  building?: boolean
-  progress?: number // 0-100
-}
-
-/** ragApi 的预期形状（用于 runtime 防御） */
-interface RagApiShape {
-  recall?: (query: string, topK?: number) => Promise<{ chunks: RagRecall[]; truncated?: boolean }>
-  indexStatus?: () => Promise<RagIndex>
-  rebuild?: () => Promise<RagIndex>
-  clear?: () => Promise<{ cleared?: boolean }>
-}
-
-/** 取得 ragApi；若 Agent 4 未添加则返回 null */
-function getRagApi(): RagApiShape | null {
-  if (!ragApi) return null
-  return ragApi as unknown as RagApiShape
-}
+import type { RagChunk, RagIndex, RagRecall } from '../types'
 
 const PREVIEW_LEN = 200
-const DEFAULT_TOP_K = 8
+const DEFAULT_MAX_CHUNKS = 8
 
 export function RagPanel() {
   // 索引状态
   const [indexInfo, setIndexInfo] = useState<RagIndex | null>(null)
   const [loadingStatus, setLoadingStatus] = useState(false)
   const [building, setBuilding] = useState(false)
-  // mock 进度（0-100）
-  const [buildProgress, setBuildProgress] = useState(0)
   // 搜索
   const [query, setQuery] = useState('')
-  const [recalls, setRecalls] = useState<RagRecall[]>([])
+  const [recalls, setRecalls] = useState<RagChunk[]>([])
   const [truncated, setTruncated] = useState(false)
   const [searching, setSearching] = useState(false)
   // 展开的 chunk id
@@ -80,23 +42,14 @@ export function RagPanel() {
 
   /** 拉取索引状态 */
   const refreshStatus = useCallback(async () => {
-    const api = getRagApi()
-    if (!api || typeof api.indexStatus !== 'function') {
-      // 兜底：使用 mock 状态
-      setIndexInfo({ fileCount: 0, tokenCount: 0 })
-      return
-    }
     setLoadingStatus(true)
     setError(null)
     try {
-      const info = await api.indexStatus()
+      const info = await ragApi.getIndex()
       setIndexInfo(info)
-      if (info.building) {
-        setBuilding(true)
-        setBuildProgress(info.progress ?? 0)
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
+      setIndexInfo(null)
     } finally {
       setLoadingStatus(false)
     }
@@ -107,39 +60,18 @@ export function RagPanel() {
     void refreshStatus()
   }, [refreshStatus])
 
-  /** 索引构建中：mock 进度推进 */
-  useEffect(() => {
-    if (!building) return
-    const timer = window.setInterval(() => {
-      setBuildProgress((p) => {
-        const next = Math.min(100, p + Math.random() * 12 + 3)
-        if (next >= 100) {
-          window.clearInterval(timer)
-          // 完成后刷新状态
-          setBuilding(false)
-          void refreshStatus()
-          return 100
-        }
-        return next
-      })
-    }, 240)
-    return () => window.clearInterval(timer)
-  }, [building, refreshStatus])
-
-  /** 搜索：调用 ragApi.recall */
+  /** 搜索：调用 ragApi.recall（注意是 body 参数签名） */
   const handleSearch = useCallback(async () => {
     const q = query.trim()
     if (!q) return
-    const api = getRagApi()
-    if (!api || typeof api.recall !== 'function') {
-      setError('RAG 接口未就绪（ragApi.recall 不可用）')
-      return
-    }
     setSearching(true)
     setError(null)
     setExpandedId(null)
     try {
-      const r = await api.recall(q, DEFAULT_TOP_K)
+      const r: RagRecall = await ragApi.recall({
+        query: q,
+        maxChunks: DEFAULT_MAX_CHUNKS,
+      })
       setRecalls(r.chunks ?? [])
       setTruncated(!!r.truncated)
     } catch (err) {
@@ -153,44 +85,24 @@ export function RagPanel() {
 
   /** 重建索引 */
   const handleRebuild = useCallback(async () => {
-    const api = getRagApi()
-    if (!api || typeof api.rebuild !== 'function') {
-      // 兜底：mock 进度
-      setBuilding(true)
-      setBuildProgress(0)
-      return
-    }
     setBuilding(true)
-    setBuildProgress(0)
     setError(null)
     try {
-      const info = await api.rebuild()
+      const info = await ragApi.buildIndex()
       setIndexInfo(info)
-      if (!info.building) {
-        // 同步完成
-        setBuilding(false)
-        setBuildProgress(100)
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
+    } finally {
       setBuilding(false)
     }
   }, [])
 
   /** 清空索引 */
   const handleClear = useCallback(async () => {
-    const api = getRagApi()
-    if (!api || typeof api.clear !== 'function') {
-      // 兜底：直接清空本地状态
-      setIndexInfo({ fileCount: 0, tokenCount: 0 })
-      setRecalls([])
-      setTruncated(false)
-      return
-    }
     setError(null)
     try {
-      await api.clear()
-      setIndexInfo({ fileCount: 0, tokenCount: 0 })
+      await ragApi.clear()
+      setIndexInfo(null)
       setRecalls([])
       setTruncated(false)
     } catch (err) {
@@ -208,10 +120,10 @@ export function RagPanel() {
           ) : indexInfo ? (
             <>
               <span className="px-1.5 py-0.5 rounded bg-white/6 text-text-secondary">
-                {indexInfo.fileCount} 文件
+                {indexInfo.totalFiles} 文件
               </span>
               <span className="px-1.5 py-0.5 rounded bg-white/6 text-text-secondary">
-                {formatTokens(indexInfo.tokenCount)} tokens
+                {formatTokens(indexInfo.totalTokens)} tokens
               </span>
             </>
           ) : (
@@ -237,22 +149,6 @@ export function RagPanel() {
           </button>
         </div>
       </div>
-
-      {/* === 索引构建进度条（mock） === */}
-      {building && (
-        <div className="px-3 py-2 border-b border-white/5 bg-accent/5">
-          <div className="flex items-center justify-between text-2xs text-accent mb-1">
-            <span>正在构建索引…</span>
-            <span className="font-mono">{Math.round(buildProgress)}%</span>
-          </div>
-          <div className="h-1 rounded-full bg-white/8 overflow-hidden">
-            <div
-              className="h-full bg-accent transition-all duration-200 ease-out"
-              style={{ width: `${buildProgress}%` }}
-            />
-          </div>
-        </div>
-      )}
 
       {/* === 错误条 === */}
       {error && (
@@ -334,7 +230,7 @@ export function RagPanel() {
 /* ============== 单个召回片段卡片 ============== */
 
 interface RagChunkItemProps {
-  chunk: RagRecall
+  chunk: RagChunk
   expanded: boolean
   onToggle: () => void
 }
@@ -355,7 +251,7 @@ function RagChunkItem({ chunk, expanded, onToggle }: RagChunkItemProps) {
       onClick={onToggle}
       className="w-full text-left px-2.5 py-2 rounded-lg bg-white/4 hover:bg-white/6 border border-white/5 transition-all duration-200 ease-out"
     >
-      {/* 头部：文件名 + 行号范围 + token 数 + 评分 */}
+      {/* 头部：文件名 + 行号范围 + token 数 */}
       <div className="flex items-center gap-2 mb-1">
         <FileBadge filePath={chunk.filePath} />
         <span className="text-xs font-mono text-text-primary truncate flex-1" title={chunk.filePath}>
@@ -369,14 +265,6 @@ function RagChunkItem({ chunk, expanded, onToggle }: RagChunkItemProps) {
         {chunk.tokens != null && (
           <span className="text-2xs font-mono text-text-tertiary flex-shrink-0">
             {chunk.tokens} tok
-          </span>
-        )}
-        {chunk.score != null && (
-          <span
-            className="px-1.5 py-0.5 rounded text-2xs font-mono bg-accent/12 text-accent flex-shrink-0"
-            title="相似度评分"
-          >
-            {chunk.score.toFixed(2)}
           </span>
         )}
       </div>

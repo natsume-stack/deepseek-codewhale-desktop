@@ -58,7 +58,9 @@ const STORAGE_KEY = 'codewhale-session-tabs'
 let tabIdSeq = 0
 function genTabId(): string {
   tabIdSeq += 1
-  return `tab_${Date.now().toString(36)}_${tabIdSeq}`
+  // 自增序号 + 时间戳 + 随机后缀，保证占位 Tab id 全局唯一
+  // 避免同一毫秒内连续点击"新建对话"导致 id 碰撞、React key 冲突
+  return `tab_${Date.now().toString(36)}_${tabIdSeq}_${Math.random().toString(36).slice(2, 8)}`
 }
 
 /** 默认新标签标题 */
@@ -218,38 +220,46 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
 
   setActiveId: (id) => {
     const { tabs, activeId } = get()
-    // 若 id 不在 tabs 中，但 id 非 null
-    if (id && !tabs.some((t) => t.id === id)) {
-      // 若当前 active tab 是占位符（openNew 创建的 tab_xxx），重绑定到真实 session id
-      // 避免"新建标签后首条消息触发后端新建会话"产生重复标签
-      const activeTab = activeId ? tabs.find((t) => t.id === activeId) : null
-      if (activeTab && activeTab.id.startsWith('tab_')) {
-        const rebound = tabs.map((t) =>
-          t.id === activeTab.id ? { ...t, id } : t,
-        )
-        const derived = deriveActive(rebound, id)
-        persist(derived, id)
-        set({ tabs: derived, activeId: id })
-        return
-      }
-      // 否则追加新标签
-      const newTab: SessionTab = {
-        id,
-        title: DEFAULT_TITLE,
-        active: true,
-        pinned: false,
-        createdAt: Date.now(),
-      }
-      const pinned = tabs.filter((t) => t.pinned)
-      const others = tabs.filter((t) => !t.pinned)
-      const nextTabs = deriveActive([...pinned, newTab, ...others], id)
-      persist(nextTabs, id)
-      set({ tabs: nextTabs, activeId: id })
+
+    // id 为 null：清空激活
+    if (!id) {
+      const nextTabs = deriveActive(tabs, null)
+      persist(nextTabs, null)
+      set({ tabs: nextTabs, activeId: null })
       return
     }
-    const nextTabs = deriveActive(tabs, id)
-    persist(nextTabs, id)
-    set({ tabs: nextTabs, activeId: id })
+
+    // 情况 1：真实 sessionId 的 Tab 已存在
+    // 直接激活它，并清理当前 active 的占位 Tab（避免占位 Tab 残留导致重复）
+    if (tabs.some((t) => t.id === id)) {
+      const activeTab = activeId ? tabs.find((t) => t.id === activeId) : null
+      let nextTabs = tabs
+      if (activeTab && activeTab.id.startsWith('tab_') && activeTab.id !== id) {
+        nextTabs = tabs.filter((t) => t.id !== activeTab.id)
+      }
+      const derived = deriveActive(nextTabs, id)
+      persist(derived, id)
+      set({ tabs: derived, activeId: id })
+      return
+    }
+
+    // 情况 2：真实 sessionId 的 Tab 不存在，但当前 active 是占位 Tab
+    // 把占位 Tab 的 id 重绑定为真实 sessionId
+    const activeTab = activeId ? tabs.find((t) => t.id === activeId) : null
+    if (activeTab && activeTab.id.startsWith('tab_')) {
+      const rebound = tabs.map((t) =>
+        t.id === activeTab.id ? { ...t, id } : t,
+      )
+      const derived = deriveActive(rebound, id)
+      persist(derived, id)
+      set({ tabs: derived, activeId: id })
+      return
+    }
+
+    // 情况 3：真实 sessionId 的 Tab 不存在，且当前 active 不是占位 Tab
+    // （占位 Tab 已被切换/关闭）：不新增 Tab，避免真实 sessionId 重复出现
+    // 保持当前激活状态不变（chat store 的 sessionId 已由后端返回，不影响业务逻辑）
+    return
   },
 
   moveTab: (fromId, toId) => {

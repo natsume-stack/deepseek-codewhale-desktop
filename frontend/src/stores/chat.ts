@@ -14,7 +14,8 @@ import { create } from 'zustand'
 import { postSse, type ParsedSseEvent } from '../lib/sse'
 import { chatApi, sessionsApi, BASE } from '../lib/api'
 import { useTodosStore } from './todos'
-import type { ChatStreamMessage, ReasoningEffort, TodoItem } from '../types'
+import { useSessionsStore } from './sessions'
+import type { ChatStreamMessage, ReasoningEffort, TodoItem, ToolCallEntry } from '../types'
 
 interface ChatState {
   /** 当前会话 id（首次发送后由后端 session 事件赋值） */
@@ -147,7 +148,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
           switch (ev.event) {
             case 'session': {
               const sid = payload.sessionId as string | undefined
-              if (sid) set({ sessionId: sid })
+              if (sid) {
+                set({ sessionId: sid })
+                // 同步到 sessions store：setActiveId 会自动把当前占位 Tab（tab_xxx）
+                // 替换为真实 sessionId，避免 Tab 重复，并保持 Tab 高亮一致
+                try {
+                  useSessionsStore.getState().setActiveId(sid)
+                } catch {
+                  // sessions store 未加载时忽略
+                }
+              }
               break
             }
             case 'delta': {
@@ -182,8 +192,101 @@ export const useChatStore = create<ChatState>((set, get) => ({
               // 后端推送代办任务列表，注入 todos store
               const items = (payload.items as TodoItem[] | undefined) ?? []
               if (items.length > 0) {
-                useTodosStore.getState().upsertMany(items)
+                // P0 修复跨会话污染：仅接受属于当前会话的 todos，
+                // 防止切换会话后旧流的 todos 事件污染新视图
+                const curSid = get().sessionId
+                const filtered = curSid
+                  ? items.filter((it) => !it.sessionId || it.sessionId === curSid)
+                  : items
+                if (filtered.length > 0) {
+                  useTodosStore.getState().upsertMany(filtered)
+                }
               }
+              break
+            }
+            case 'tool_call': {
+              // Agent Loop 工具调用事件：新增一条运行中的 toolCall 到当前 assistant 消息
+              const callId = payload.callId as string | undefined
+              // 强制要求 callId，缺失则丢弃（避免 tool_result 永远配不上）
+              if (!callId) {
+                console.warn('[chat] tool_call 缺失 callId，丢弃', payload)
+                break
+              }
+              const name = (payload.name as string | undefined) ?? 'unknown'
+              const intent = (payload.intent as string | undefined) ?? ''
+              const requiredPermission = payload.requiredPermission as
+                | 'readOnly'
+                | 'workspaceWrite'
+                | 'fullAccess'
+                | undefined
+              const args = (payload.args as Record<string, unknown> | undefined) ?? undefined
+              const entry: ToolCallEntry = {
+                localId: callId,
+                name,
+                intent,
+                requiredPermission,
+                args,
+                status: 'running',
+                ts: Date.now(),
+              }
+              set((s) => ({
+                messages: s.messages.map((m) =>
+                  m.localId === assistantLocalId
+                    ? { ...m, toolCalls: [...(m.toolCalls ?? []), entry] }
+                    : m,
+                ),
+              }))
+              break
+            }
+            case 'tool_result': {
+              // 工具执行结果：更新对应 toolCall 的状态和结果
+              const callId = payload.callId as string | undefined
+              const success = payload.success as boolean | undefined
+              const result = (payload.result as string | undefined) ?? ''
+              if (!callId) break
+              set((s) => ({
+                messages: s.messages.map((m) =>
+                  m.localId === assistantLocalId
+                    ? {
+                        ...m,
+                        toolCalls: (m.toolCalls ?? []).map((tc) =>
+                          tc.localId === callId
+                            ? { ...tc, status: success ? 'success' : 'failed', result }
+                            : tc,
+                        ),
+                      }
+                    : m,
+                ),
+              }))
+              break
+            }
+            case 'attempt_completion': {
+              // 任务收尾：后端先发 tool_call(attempt_completion) 再发本事件
+              // 通过 callId 更新已存在的卡片状态为 success，并标记消息为 completion
+              // 若 callId 缺失，兜底把所有 running 卡片标记为 success
+              const result = (payload.result as string | undefined) ?? ''
+              const callId = payload.callId as string | undefined
+              set((s) => ({
+                messages: s.messages.map((m) =>
+                  m.localId === assistantLocalId
+                    ? {
+                        ...m,
+                        completion: true,
+                        toolCalls: (m.toolCalls ?? []).map((tc) => {
+                          if (callId) {
+                            return tc.localId === callId
+                              ? { ...tc, status: 'success' as const, result }
+                              : tc
+                          }
+                          // 无 callId 兜底：所有 running 卡片置为 success
+                          return tc.status === 'running'
+                            ? { ...tc, status: 'success' as const, result }
+                            : tc
+                        }),
+                      }
+                    : m,
+                ),
+              }))
               break
             }
             case 'error': {
@@ -193,8 +296,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
               break
             }
             case 'done': {
-              updateAssistant({ streaming: false })
-              set({ streaming: false })
+              // 兜底：把残留的 running toolCall 卡片标记为 failed（避免永远转圈）
+              set((s) => ({
+                streaming: false,
+                messages: s.messages.map((m) =>
+                  m.localId === assistantLocalId
+                    ? {
+                        ...m,
+                        streaming: false,
+                        toolCalls: (m.toolCalls ?? []).map((tc) =>
+                          tc.status === 'running'
+                            ? { ...tc, status: 'failed' as const, result: (tc.result ?? '') + '\n[任务被中断]' }
+                            : tc,
+                        ),
+                      }
+                    : m,
+                ),
+              }))
               break
             }
             default:
@@ -238,9 +356,37 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }))
   },
 
-  clearView: () => set({ messages: [], lastError: null }),
+  clearView: () => {
+    // 主动中断当前流（避免旧流污染新视图）
+    // 参考 Cline / Claude Code：切换会话/项目/新建对话前必须先停旧流
+    const state = get()
+    if (state.streaming) {
+      state._abortor?.abort()
+      if (state.sessionId) {
+        void chatApi.stop(state.sessionId).catch(() => {})
+      }
+    }
+    set({
+      messages: [],
+      lastError: null,
+      streaming: false,
+      // 重置 sessionId：让下次发送创建新会话，绑定当前最新的 project_root
+      // 这也修复了"切换项目后目录还是原来项目"的问题
+      sessionId: null,
+      _abortor: null,
+    })
+  },
 
   switchSession: async (id) => {
+    // 切换会话前先停掉当前流，避免旧流污染新会话视图
+    const state = get()
+    if (state.streaming) {
+      state._abortor?.abort()
+      if (state.sessionId) {
+        void chatApi.stop(state.sessionId).catch(() => {})
+      }
+      set({ streaming: false, _abortor: null })
+    }
     try {
       const s = await sessionsApi.get(id)
       const messages: ChatStreamMessage[] = s.messages.map((m) => ({

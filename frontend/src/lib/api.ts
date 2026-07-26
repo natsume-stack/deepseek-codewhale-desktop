@@ -69,12 +69,36 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * 带超时的 fetch 包装：默认 30 秒超时，超时后 abort 并 throw Error('Request timeout')。
+ * 仅用于普通 REST 请求；SSE 流式请求（lib/sse.ts postSse）不要使用本函数。
+ */
+export async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs = 30000,
+): Promise<Response> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    return await fetch(url, { ...init, signal: controller.signal })
+  } catch (err) {
+    // 超时触发的 abort 会产生 AbortError（DOMException）
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new Error('Request timeout')
+    }
+    throw err
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 async function request<T>(
   method: string,
   path: string,
   body?: unknown,
 ): Promise<T> {
-  const resp = await fetch(`${BASE}${path}`, {
+  const resp = await fetchWithTimeout(`${BASE}${path}`, {
     method,
     headers: body !== undefined
       ? { 'Content-Type': 'application/json' }
@@ -359,7 +383,12 @@ export const approvalsApi = {
   listPending: () => request<{ approvals: ApprovalRequest[]; total: number }>('GET', '/approvals/pending'),
   create: (body: { kind: ApprovalKind; description: string; detail?: string; sessionId?: string }) => request<ApprovalRequest>('POST', '/approvals', body),
   get: (id: string) => request<ApprovalRequest>('GET', `/approvals/${encodeURIComponent(id)}`),
-  decide: (id: string, approved: boolean) => request<ApprovalRequest>('POST', `/approvals/${encodeURIComponent(id)}/decide`, { approved }),
+  decide: (id: string, approved: boolean) => request<{
+    approval: ApprovalRequest
+    executed: boolean
+    executionError?: string | null
+    executionResult?: unknown
+  }>('POST', `/approvals/${encodeURIComponent(id)}/decide`, { approved }),
 }
 
 /* ============================================================

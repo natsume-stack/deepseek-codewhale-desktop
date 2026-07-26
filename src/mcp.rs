@@ -414,6 +414,13 @@ impl McpStore {
         let mut cmd = Command::new(command);
         // 超时或异常退出时自动 kill 子进程，避免孤儿进程
         cmd.kill_on_drop(true);
+        // Windows: 抑制子进程控制台窗口弹出（黑窗），同时不破坏 GUI 体验
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            // CREATE_NO_WINDOW = 0x08000000
+            cmd.creation_flags(0x08000000);
+        }
         if let Some(args) = &config.args {
             cmd.args(args);
         }

@@ -178,6 +178,41 @@ impl SessionManager {
         Ok(())
     }
 
+    /// Agent Loop 专用：写入 assistant 消息但不清除 running 状态，也不清除令牌。
+    ///
+    /// 与 finish_turn 的区别：
+    ///   - 不清除 current_cancel（保持可中断）
+    ///   - 不设置 running=false（保持会话活跃）
+    ///   - 先把 current_message 归档到 history，再追加 assistant，保证 history 顺序正确
+    ///     （user 在前，assistant 在后）
+    ///
+    /// 用于 Agent Loop 多轮工具调用中落地每轮 assistant 输出。
+    pub async fn push_assistant_message(
+        &self,
+        id: &str,
+        assistant_content: String,
+    ) -> AppResult<()> {
+        let mut map = self.inner.write().await;
+        let s = map
+            .get_mut(id)
+            .ok_or_else(|| AppError::SessionNotFound(id.to_string()))?;
+        if assistant_content.is_empty() {
+            return Ok(());
+        }
+        s.messages.push(ChatMessage::assistant(assistant_content.clone()));
+        if let Some(cache) = s.cache.as_mut() {
+            // 先归档当前 current_message 到 history（保证 user 在 assistant 之前）
+            if !cache.current_message.is_empty() {
+                cache.append_history(CacheMessage::user(cache.current_message.clone()));
+                cache.set_current_message(String::new());
+            }
+            // 再追加 assistant 消息
+            cache.append_history(CacheMessage::assistant(assistant_content));
+        }
+        s.updated_at = Utc::now();
+        Ok(())
+    }
+
     /// 中断当前轮次。返回是否确实触发了中断。
     pub async fn abort_turn(&self, id: &str) -> AppResult<bool> {
         let mut map = self.inner.write().await;

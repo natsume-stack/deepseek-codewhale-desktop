@@ -137,6 +137,13 @@ pub async fn create_file(
         .project_root()
         .await
         .ok_or_else(|| AppError::BadRequest("尚未加载项目目录".into()))?;
+    // 写操作权限闸门：需 can_write（WorkspaceWrite / FullAccess）
+    let cfg = state.permission_config().await;
+    if !cfg.level.can_write() {
+        return Err(AppError::Forbidden(
+            "当前权限等级禁止创建文件/目录".into(),
+        ));
+    }
 
     let parent = body
         .parent_path
@@ -154,15 +161,18 @@ pub async fn create_file(
     }
 
     if body.is_folder {
-        std::fs::create_dir_all(&target)
+        tokio::fs::create_dir_all(&target)
+            .await
             .map_err(|e| AppError::BadRequest(format!("创建文件夹失败: {e}")))?;
     } else {
         // 确保父目录存在
         if let Some(p) = target.parent() {
-            std::fs::create_dir_all(p)
+            tokio::fs::create_dir_all(p)
+                .await
                 .map_err(|e| AppError::BadRequest(format!("创建父目录失败: {e}")))?;
         }
-        std::fs::write(&target, body.content.as_deref().unwrap_or(""))
+        tokio::fs::write(&target, body.content.as_deref().unwrap_or(""))
+            .await
             .map_err(|e| AppError::BadRequest(format!("创建文件失败: {e}")))?;
     }
 
@@ -193,6 +203,13 @@ pub async fn delete_file(
         .project_root()
         .await
         .ok_or_else(|| AppError::BadRequest("尚未加载项目目录".into()))?;
+    // 写操作权限闸门：删除视为高危写操作，需 can_write
+    let cfg = state.permission_config().await;
+    if !cfg.level.can_write() {
+        return Err(AppError::Forbidden(
+            "当前权限等级禁止删除文件/目录".into(),
+        ));
+    }
     let target = PathBuf::from(&q.path);
     validate_within_root(&target, &root)?;
 
@@ -201,10 +218,12 @@ pub async fn delete_file(
     }
 
     if target.is_dir() {
-        std::fs::remove_dir_all(&target)
+        tokio::fs::remove_dir_all(&target)
+            .await
             .map_err(|e| AppError::BadRequest(format!("删除文件夹失败: {e}")))?;
     } else {
-        std::fs::remove_file(&target)
+        tokio::fs::remove_file(&target)
+            .await
             .map_err(|e| AppError::BadRequest(format!("删除文件失败: {e}")))?;
     }
 
@@ -228,6 +247,13 @@ pub async fn rename_file(
         .project_root()
         .await
         .ok_or_else(|| AppError::BadRequest("尚未加载项目目录".into()))?;
+    // 写操作权限闸门：重命名视为写操作，需 can_write
+    let cfg = state.permission_config().await;
+    if !cfg.level.can_write() {
+        return Err(AppError::Forbidden(
+            "当前权限等级禁止重命名文件/目录".into(),
+        ));
+    }
     let src = PathBuf::from(&body.from);
     validate_within_root(&src, &root)?;
 
@@ -241,7 +267,8 @@ pub async fn rename_file(
         )));
     }
 
-    std::fs::rename(&src, &dst)
+    tokio::fs::rename(&src, &dst)
+        .await
         .map_err(|e| AppError::BadRequest(format!("重命名失败: {e}")))?;
 
     tracing::info!("重命名: {} -> {}", src.display(), dst.display());
@@ -318,7 +345,8 @@ pub async fn read_file(
         return Err(AppError::BadRequest("目标是目录，无法读取".into()));
     }
 
-    let metadata = std::fs::metadata(&target)
+    let metadata = tokio::fs::metadata(&target)
+        .await
         .map_err(|e| AppError::BadRequest(format!("读取元数据失败: {e}")))?;
     if metadata.len() > body.max_bytes {
         return Err(AppError::BadRequest(format!(
@@ -328,7 +356,8 @@ pub async fn read_file(
         )));
     }
 
-    let content = std::fs::read_to_string(&target)
+    let content = tokio::fs::read_to_string(&target)
+        .await
         .map_err(|e| AppError::BadRequest(format!("读取文件失败: {e}")))?;
 
     Ok(Json(json!({
@@ -359,6 +388,13 @@ pub async fn write_file(
         .project_root()
         .await
         .ok_or_else(|| AppError::BadRequest("尚未加载项目目录".into()))?;
+    // 写操作权限闸门：写入视为写操作，需 can_write
+    let cfg = state.permission_config().await;
+    if !cfg.level.can_write() {
+        return Err(AppError::Forbidden(
+            "当前权限等级禁止写入文件".into(),
+        ));
+    }
     let target = PathBuf::from(&body.path);
     validate_within_root(&target, &root)?;
 
@@ -367,16 +403,18 @@ pub async fn write_file(
             "{}.bak",
             target.extension().and_then(|e| e.to_str()).unwrap_or("")
         ));
-        let _ = std::fs::copy(&target, &backup);
+        let _ = tokio::fs::copy(&target, &backup).await;
     }
 
     // 确保父目录存在
     if let Some(p) = target.parent() {
-        std::fs::create_dir_all(p)
+        tokio::fs::create_dir_all(p)
+            .await
             .map_err(|e| AppError::BadRequest(format!("创建父目录失败: {e}")))?;
     }
 
-    std::fs::write(&target, &body.content)
+    tokio::fs::write(&target, &body.content)
+        .await
         .map_err(|e| AppError::BadRequest(format!("写入文件失败: {e}")))?;
 
     tracing::info!("已写入: {}", target.display());

@@ -139,5 +139,9 @@ export const BUILTIN_SLASH_COMMANDS: SlashCommand[] = [
   { cmd: '/test', label: '测试', desc: '为指定文件生成单元测试' },
   { cmd: '/explain', label: '解释', desc: '解释代码逻辑、思路或实现细节' },
   { cmd: '/fix', label: '修复', desc: '分析并修复 bug 或编译错误' },
+  { cmd: '/search', label: '搜索', desc: '在项目中搜索相关代码片段并分析' },
+  { cmd: '/task', label: '任务', desc: '将需求拆解为可执行的子任务 todo 列表' },
+  { cmd: '/plan', label: '规划', desc: '生成实施计划（仅规划不修改代码）' },
+  { cmd: '/commit', label: '提交信息', desc: '基于变更说明生成 Conventional Commits 提交信息' },
   { cmd: '/clear', label: '清空会话', desc: '清空当前会话上下文（不可撤销）' },
 ]

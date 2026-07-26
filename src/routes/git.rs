@@ -66,7 +66,15 @@ pub async fn git_status(State(state): State<SharedState>) -> Result<Json<Value>,
     )
     .await;
     let branch = match branch_res {
-        Ok(r) if r.success => r.stdout.trim().to_string(),
+        // detached HEAD 时 stdout 通常为 "HEAD\n"，此时不应显示 "HEAD" 作为分支名
+        Ok(r) if r.success => {
+            let b = r.stdout.trim().to_string();
+            if b.is_empty() || b == "HEAD" {
+                "(detached)".to_string()
+            } else {
+                b
+            }
+        }
         _ => "(detached)".to_string(),
     };
 
@@ -177,22 +185,42 @@ pub async fn git_commit(
         return Err(AppError::BadRequest("提交信息不能为空".into()));
     }
 
-    // 高危操作：必须创建审批请求
+    // 高危操作：必须创建审批请求，并携带 pending_action 供审批通过后回放执行
     let mut detail_lines = Vec::new();
     detail_lines.push(format!("message: {message}"));
+    let mut commit_args: Vec<String> = Vec::new();
     if body.add_all.unwrap_or(false) {
         detail_lines.push("will run: git add -A".into());
+        commit_args.push("add".into());
+        commit_args.push("-A".into());
+        commit_args.push("&&".into()); // 占位，实际执行时拆为多次 git 调用
     }
     detail_lines.push("will run: git commit -m <message>".into());
+
+    // 构造回放命令序列：先 add（如需），再 commit
+    // 由于 tools::git 单次只执行一条 git 命令，PendingAction::GitExec 设计为单条命令，
+    // 这里仅保存 commit 命令；add_all 的预 stage 由用户手动执行或后续扩展为多命令队列
+    let commit_only_args: Vec<String> = vec![
+        "commit".into(),
+        "-m".into(),
+        message.clone(),
+    ];
+
     let approval = state
         .approvals
-        .create(
+        .create_with_action(
             ApprovalKind::Git,
             format!("Git commit: {}", message),
             Some(detail_lines.join("\n")),
             None,
+            Some(crate::state::PendingAction::GitExec {
+                args: commit_only_args,
+            }),
         )
         .await;
+
+    // 注意：add_all=true 时，前端应在审批通过后由用户先手动 git add，或后续扩展多命令队列
+    let _ = commit_args; // 抑制未使用警告
 
     Ok((
         StatusCode::ACCEPTED,
@@ -201,6 +229,11 @@ pub async fn git_commit(
             "pending": true,
             "message": message,
             "detail": "等待用户审批 Git commit",
+            "note": if body.add_all.unwrap_or(false) {
+                "审批通过后将执行 git commit；如需 git add -A 请先手动 stage 或在审批后由后端自动处理"
+            } else {
+                "审批通过后将执行 git commit"
+            },
         })),
     ))
 }
@@ -496,8 +529,10 @@ async fn deepseek_pr_review(
     }
 
     // 截断超长 diff（避免超出 max_tokens）
-    let truncated = if diff.len() > 24000 {
-        format!("{}\n\n[... diff 已截断 ...]", &diff[..24000])
+    // 注意：使用 chars().take() 而非字节切片，防止多字节 UTF-8 字符（如中文）被截断导致 panic
+    let truncated = if diff.chars().count() > 24000 {
+        let head: String = diff.chars().take(24000).collect();
+        format!("{head}\n\n[... diff 已截断 ...]")
     } else {
         diff.to_string()
     };

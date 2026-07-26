@@ -216,15 +216,23 @@ function TodosTab() {
   const loading = useTodosStore((s) => s.loading)
   const error = useTodosStore((s) => s.error)
   const fetchAll = useTodosStore((s) => s.fetchAll)
+  const fetchBySession = useTodosStore((s) => s.fetchBySession)
   const create = useTodosStore((s) => s.create)
   const updateStatus = useTodosStore((s) => s.updateStatus)
+  // P0 修复跨会话污染：按当前会话拉取代办，无会话时回退到全部
+  const sessionId = useChatStore((s) => s.sessionId)
 
-  // 初次挂载拉取代办列表
   useEffect(() => {
-    void fetchAll()
-  }, [fetchAll])
+    if (sessionId) {
+      void fetchBySession(sessionId)
+    } else {
+      void fetchAll()
+    }
+  }, [sessionId, fetchAll, fetchBySession])
 
   const doneCount = todos.filter((t) => t.status === 'done').length
+  const runningCount = todos.filter((t) => t.status === 'running').length
+  const pendingCount = todos.filter((t) => t.status === 'pending').length
 
   /** 新增代办：弹出 prompt 对话框输入文本 */
   const handleAdd = async () => {
@@ -246,9 +254,20 @@ function TodosTab() {
   return (
     <div className="h-full flex flex-col">
       <div className="flex items-center justify-between px-3 py-2 border-b border-white/5">
-        <span className="text-2xs font-mono text-text-tertiary">
-          {doneCount}/{todos.length} 已完成
-        </span>
+        <div className="flex items-center gap-1.5 text-2xs font-mono">
+          <span className="text-text-tertiary">
+            {doneCount}/{todos.length} 已完成
+          </span>
+          {runningCount > 0 && (
+            <span className="px-2 py-0.5 rounded-xl bg-white/10 text-text-primary flex items-center gap-1">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-white animate-pulse-soft" />
+              进行中 {runningCount}
+            </span>
+          )}
+          {pendingCount > 0 && runningCount === 0 && (
+            <span className="text-text-tertiary">待处理 {pendingCount}</span>
+          )}
+        </div>
         <button
           onClick={() => void handleAdd()}
           disabled={loading}
@@ -267,7 +286,7 @@ function TodosTab() {
 
       <div className="flex-1 overflow-auto p-2 space-y-1">
         {todos.length === 0 ? (
-          <EmptyHint icon={<TodoIcon />} text="暂无代办事项。点击「新增」创建一条。" />
+          <EmptyHint icon={<TodoIcon />} text="暂无代办事项。AI 拆解任务后会自动列出。" />
         ) : (
           todos.map((t, index) => (
             <button
@@ -280,14 +299,29 @@ function TodosTab() {
                 className={`mt-0.5 w-5 h-5 rounded-xl border flex items-center justify-center flex-shrink-0 transition-all duration-200
                   ${t.status === 'done'
                     ? 'bg-white/20 border-white/40 text-white'
-                    : 'border-white/15 text-transparent hover:border-white/30'
+                    : t.status === 'running'
+                      ? 'border-white/30 text-transparent bg-white/5'
+                      : 'border-white/15 text-transparent hover:border-white/30'
                   }`}
               >
-                <CheckIcon />
+                {t.status === 'running' ? (
+                  <svg width="10" height="10" viewBox="0 0 16 16" fill="none" className="animate-spin text-text-primary">
+                    <circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.4" strokeOpacity="0.25" />
+                    <path d="M13.5 8a5.5 5.5 0 00-5.5-5.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                  </svg>
+                ) : (
+                  <CheckIcon />
+                )}
               </span>
               <div className="min-w-0 flex-1">
                 <div
-                  className={`text-xs font-medium ${t.status === 'done' ? 'text-text-tertiary line-through' : 'text-text-primary'}`}
+                  className={`text-xs font-medium
+                    ${t.status === 'done'
+                      ? 'text-text-tertiary line-through'
+                      : t.status === 'running'
+                        ? 'text-text-primary'
+                        : 'text-text-primary'
+                    }`}
                 >
                   {t.text}
                 </div>
