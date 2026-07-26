@@ -40,7 +40,11 @@ impl AppError {
         match self {
             AppError::BadRequest(_) | AppError::SessionNotFound(_) => StatusCode::BAD_REQUEST,
             AppError::Config(_) => StatusCode::FAILED_DEPENDENCY,
-            AppError::DeepSeek { .. } => StatusCode::BAD_GATEWAY,
+            // Keep actionable upstream failures actionable. In particular, a bad
+            // credential must remain a 401 instead of being misreported as 502.
+            AppError::DeepSeek { status, .. } => {
+                StatusCode::from_u16(*status).unwrap_or(StatusCode::BAD_GATEWAY)
+            }
             AppError::Tool(_) => StatusCode::UNPROCESSABLE_ENTITY,
             AppError::Forbidden(_) => StatusCode::FORBIDDEN,
             _ => StatusCode::INTERNAL_SERVER_ERROR,

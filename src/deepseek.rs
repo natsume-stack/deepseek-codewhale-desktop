@@ -166,16 +166,10 @@ impl DeepSeekClient {
         if let Some(t) = req.temperature {
             body["temperature"] = serde_json::json!(t);
         }
-        // 透传推理强度 (DeepSeek 后端按需消费, 未知字段会被忽略)
-        let effort = match req.reasoning_effort {
-            ReasoningEffort::Minimal => "minimal",
-            ReasoningEffort::Low => "low",
-            ReasoningEffort::Medium => "medium",
-            ReasoningEffort::High => "high",
-        };
-        body["reasoning_effort"] = serde_json::json!(effort);
-        // 缓存开关透传
-        body["enable_cache"] = serde_json::json!(req.enable_cache);
+        // DeepSeek's direct Chat Completions endpoint accepts the OpenAI-compatible
+        // request shape. Context caching and effort selection are local agent
+        // concerns; sending them as undocumented fields makes many compatible
+        // gateways reject an otherwise valid request.
         body
     }
 
