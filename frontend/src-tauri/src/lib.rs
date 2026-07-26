@@ -60,6 +60,15 @@ fn is_maximized(window: tauri::Window) -> bool {
     window.is_maximized().unwrap_or(false)
 }
 
+/// Opens the platform-native folder picker for choosing the active workspace.
+#[tauri::command]
+fn pick_project_folder() -> Option<String> {
+    rfd::FileDialog::new()
+        .set_title("选择 CodeWhale 项目目录")
+        .pick_folder()
+        .map(|path| path.display().to_string())
+}
+
 /// 包装 CommandChild 以便在窗口销毁时取回所有权并 kill
 /// （CommandChild::kill 需要 self，但 State<T> 只能拿到 &T，
 ///  用 Mutex<Option<CommandChild>> 包装后可 take 出来）
@@ -73,7 +82,8 @@ pub fn run() {
             min,
             max,
             close,
-            is_maximized
+            is_maximized,
+            pick_project_folder
         ])
         .setup(|app| {
             // === 启动 sidecar 后端 ===

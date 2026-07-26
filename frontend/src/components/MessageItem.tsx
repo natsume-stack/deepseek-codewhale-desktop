@@ -77,7 +77,7 @@ export function MessageItem({
           className={`text-2xs font-mono font-semibold uppercase tracking-wide
             ${isUser ? 'text-text-tertiary' : 'text-accent'}`}
         >
-          {isUser ? 'user' : 'codex'}
+          {isUser ? 'user' : 'CodeWhale'}
         </span>
         {ts && <span className="text-2xs text-text-tertiary font-mono">{ts}</span>}
         {isAssistant && message.streaming && (

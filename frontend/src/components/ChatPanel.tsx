@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { invoke } from '@tauri-apps/api/core'
 import { useChatStore } from '../stores/chat'
 import { useDiffStore } from '../stores/diffs'
 import { useDialogStore } from '../stores/dialog'
+import { useFileTreeStore } from '../stores/fileTree'
 import { useAutoScroll } from '../hooks/useAutoScroll'
 import { MessageItem } from './MessageItem'
 import { SlashMenu, BUILTIN_SLASH_COMMANDS } from './SlashMenu'
@@ -124,6 +126,19 @@ export function ChatPanel({ onToggleLeft, onToggleRight, leftCollapsed, rightCol
   const [gitBranch, setGitBranch] = useState('main')
   const [permissionMode, setPermissionMode] = useState<PermissionMode>('fullaccess')
   const [mcpPlugins, setMcpPlugins] = useState<Array<McpConfig & { status?: McpStatus }>>([])
+
+  const handlePickProject = useCallback(async () => {
+    const path = await invoke<string | null>('pick_project_folder').catch(() => null)
+    if (!path) return
+    const loaded = await useFileTreeStore.getState().loadProject(path)
+    if (!loaded) {
+      await useDialogStore.getState().alert({ title: '项目加载失败', message: useFileTreeStore.getState().error ?? '无法加载所选目录。' })
+      return
+    }
+    const name = path.split(/[\\/]/).filter(Boolean).pop()
+    setProjectName(name || 'CodeWhale')
+    void gitApi.status().then((g) => setGitBranch(g.branch || 'main')).catch(() => setGitBranch('main'))
+  }, [])
 
   useEffect(() => {
     void configApi.get().then((c) => setModel(c.model)).catch(() => {})
@@ -376,6 +391,7 @@ export function ChatPanel({ onToggleLeft, onToggleRight, leftCollapsed, rightCol
           onModelSwitch={handleModelSwitch}
           onEffortChange={handleEffortChange}
           onResetDefaults={handleResetDefaults}
+          onPickProject={() => void handlePickProject()}
         />
       </div>
 
@@ -408,6 +424,7 @@ interface ChatInputBarProps {
   gitBranch: string
   permissionMode: PermissionMode
   onPermissionChange: (mode: PermissionMode) => void
+  onPickProject: () => void
   mcpPlugins: Array<McpConfig & { status?: McpStatus }>
   onMcpToggle: (id: string) => void
   attachments: string[]
@@ -470,6 +487,7 @@ function ChatInputBar({
   gitBranch,
   permissionMode,
   onPermissionChange,
+  onPickProject,
   mcpPlugins,
   onMcpToggle,
   attachments,
@@ -783,7 +801,7 @@ function ChatInputBar({
         >
           <div className="text-xs text-text-tertiary px-3 py-2 font-semibold">添加</div>
           <MenuItem icon={<PaperclipIcon />} label="文件和文件夹" onClick={() => { setAddMenuOpen(false); }} />
-          <MenuItem icon={<FolderIcon />} label="项目" desc="为新任务选择项目" onClick={() => setAddMenuOpen(false)} />
+          <MenuItem icon={<FolderIcon />} label="项目" desc="选择当前任务的工作目录" onClick={() => { setAddMenuOpen(false); onPickProject() }} />
           <MenuItem icon={<TargetIcon />} label="目标" desc="设置要持续追求的目标" onClick={() => setAddMenuOpen(false)} />
           <MenuItem icon={<BulbIcon />} label="计划模式" desc="开启计划模式" onClick={() => setAddMenuOpen(false)} />
           {mcpPlugins.length > 0 && (
