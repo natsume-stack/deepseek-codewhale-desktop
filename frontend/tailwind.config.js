@@ -53,13 +53,13 @@ export default {
       },
 
       borderRadius: {
-        DEFAULT: '4px',
-        sm: '6px',
-        md: '10px',
-        lg: '16px',
-        xl: '22px',
-        '2xl': '28px',
-        '3xl': '32px',
+        DEFAULT: '23px',
+        sm: '23px',
+        md: '23px',
+        lg: '23px',
+        xl: '23px',
+        '2xl': '23px',
+        '3xl': '23px',
       },
 
       fontFamily: {
@@ -111,12 +111,12 @@ export default {
       },
 
       transitionDuration: {
-        DEFAULT: '200ms',
+        DEFAULT: '150ms',
         fast: '120ms',
         slow: '320ms',
       },
       transitionTimingFunction: {
-        DEFAULT: 'cubic-bezier(0.16, 1, 0.3, 1)',
+        DEFAULT: 'ease-out',
         smooth: 'cubic-bezier(0.4, 0, 0.2, 1)',
         bounce: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
       },

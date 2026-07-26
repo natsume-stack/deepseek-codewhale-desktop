@@ -3,20 +3,20 @@
 @tailwind utilities;
 
 /* ============================================================
- * 全局基础样式（白灰黑高级生产力风格 + Mica 透明窗口）
+ * 全局基础样式（Codex 风格的紧凑中性工作台 + Mica 窗口）
  *
  * 架构层级：
  *   1. 系统窗口层（Tauri + Win32）：Mica 云母材质，已由 tauri.conf.json + lib.rs 启用
  *   2. WebView 网页容器层（本文件）：html / body / #root 全透明
  *   3. 前端组件层：
  *      - 左侧 SideNav：透明，让 Mica 穿透
- *      - 右侧工作区：不透明深色板块（surface.work），与左侧分层
+ *      - 右侧工作区：连续的深色工作台（surface.work）
  *
  * 设计规范：
  *   - 配色：白/灰/黑为主，暖橙仅用于警告/权限按钮
- *   - 圆角：大圆角设计，输入框 28px，卡片 20px+
- *   - 字体：统一黑体，整洁美观
- *   - 动画：非线性弹性动画，流畅体验
+ *   - 圆角：紧凑，避免大面积卡片化
+ *   - 字体：系统 UI 字体，稳定、易扫读
+ *   - 动画：短暂且克制，避免弹跳
  *
  * 严禁给 html / body / #root 加任何不透明背景，否则 Mica 会被完全遮挡。
  * ============================================================ */
@@ -30,23 +30,33 @@
     /* 关键：完全透明，让底层 Mica 穿透显示 */
     background: transparent !important;
     overflow: hidden;
+    --codewhale-radius: 23px;
+    --codewhale-transition: 150ms;
   }
 
   body {
     font-family: theme('fontFamily.sans');
     font-size: theme('fontSize.base');
     color: theme('colors.text.primary');
-    /* 黑体常规字重 */
-    font-weight: 400;
+    font-family: "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+    font-weight: 700;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     user-select: none;
-    letter-spacing: 0.01em;
+    letter-spacing: 0;
+  }
+
+  /* The desktop surface uses one deliberate typographic voice throughout. */
+  #root,
+  #root * {
+    font-family: "Microsoft YaHei UI", "Microsoft YaHei", sans-serif !important;
+    font-weight: 700 !important;
   }
 
   /* 标题使用半粗体 */
-  h1, h2, h3, h4, h5, h6 {
-    font-weight: 600;
+  h1, h2, h3, h4, h5, h6, button, input, textarea, select {
+    font-family: inherit;
+    font-weight: 700;
   }
 
   /* 允许选择的区域（代码块、消息文本、输入框） */
@@ -58,18 +68,20 @@
 
   /* 轻量化滚动条（白灰风格） */
   ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: 8px;
+    height: 8px;
   }
   ::-webkit-scrollbar-track {
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.12);
-    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.14);
+    border: 2px solid transparent;
+    background-clip: padding-box;
+    border-radius: 4px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.20);
+    background: rgba(255, 255, 255, 0.28);
   }
   ::-webkit-scrollbar-corner {
     background: transparent;
@@ -88,8 +100,24 @@
   }
 }
 
+/* Components still contain legacy Tailwind radius and spring utilities. Keep
+ * them aligned while individual panels are migrated incrementally. */
+.rounded, .rounded-sm, .rounded-md, .rounded-lg, .rounded-xl,
+.rounded-2xl, .rounded-3xl, .rounded-full { border-radius: var(--codewhale-radius); }
+#root * { transition-duration: var(--codewhale-transition) !important; }
+
+#root[data-codewhale-theme='light'] .work-surface,
+#root[data-codewhale-theme='light'] .bg-surface-elevated {
+  background-color: #f7f7f8 !important;
+}
+#root[data-codewhale-theme='light'] .text-text-primary { color: #1a1c1f !important; }
+#root[data-codewhale-theme='light'] .text-text-secondary { color: rgba(26, 28, 31, 0.68) !important; }
+#root[data-codewhale-theme='light'] .text-text-tertiary { color: rgba(26, 28, 31, 0.46) !important; }
+.ease-bounce { transition-timing-function: ease-out; }
+.backdrop-blur-sm { backdrop-filter: none !important; }
+
 /* ============================================================
- * 通用组件类（白灰黑高级生产力风格：大圆角 + 弹性动画）
+ * 通用组件类（Codex 风格：低圆角、细分割线、低干扰状态）
  * ============================================================ */
 @layer components {
   /* 面板顶部 Header（透明 + 底部细线） */
@@ -104,9 +132,9 @@
 
   /* 透明图标按钮（大圆角，hover 时半透明浮起） */
   .icon-btn {
-    @apply inline-flex items-center justify-center p-2 rounded-xl
+    @apply inline-flex items-center justify-center p-1.5 rounded-md
            text-text-secondary cursor-pointer;
-    transition: all 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+    transition: background-color 120ms ease-out, color 120ms ease-out;
   }
   .icon-btn:hover {
     background-color: rgba(255, 255, 255, 0.10);
@@ -122,9 +150,9 @@
 
   /* 主按钮（白底黑字，深色底上的主交互） */
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl
+    @apply inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-md
            bg-white text-black text-sm font-medium cursor-pointer;
-    transition: all 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+    transition: background-color 120ms ease-out;
   }
   .btn-primary:hover {
     background-color: rgba(255, 255, 255, 0.90);
@@ -132,11 +160,11 @@
 
   /* 次级按钮（半透明浮层，大圆角） */
   .btn-secondary {
-    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl
+    @apply inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-md
            text-text-primary text-sm font-medium cursor-pointer;
     background-color: rgba(255, 255, 255, 0.08);
     border: 1px solid rgba(255, 255, 255, 0.10);
-    transition: all 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+    transition: background-color 120ms ease-out, border-color 120ms ease-out;
   }
   .btn-secondary:hover {
     background-color: rgba(255, 255, 255, 0.14);
@@ -145,10 +173,10 @@
 
   /* 危险按钮（柔和红色，大圆角） */
   .btn-danger {
-    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl
+    @apply inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-md
            text-white text-sm font-medium cursor-pointer;
     background-color: rgba(244, 63, 94, 0.80);
-    transition: all 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+    transition: background-color 120ms ease-out;
   }
   .btn-danger:hover {
     background-color: rgb(244, 63, 94);
@@ -156,10 +184,10 @@
 
   /* 警告按钮（暖橙，仅用于高危/权限/完全访问等场景） */
   .btn-warn {
-    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl
+    @apply inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-md
            text-white text-sm font-medium cursor-pointer;
     background-color: #F97316;
-    transition: all 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+    transition: background-color 120ms ease-out;
   }
   .btn-warn:hover {
     background-color: #EA580C;
@@ -167,11 +195,11 @@
 
   /* 输入框（大圆角，聚焦白边框） */
   .input-base {
-    @apply w-full px-4 py-2 rounded-xl
+    @apply w-full px-3 py-1.5 rounded-md
            text-text-primary text-sm;
     background-color: rgba(255, 255, 255, 0.06);
     border: 1px solid rgba(255, 255, 255, 0.08);
-    transition: all 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+    transition: background-color 120ms ease-out, border-color 120ms ease-out;
   }
   .input-base::placeholder {
     color: rgba(255, 255, 255, 0.32);
@@ -182,39 +210,39 @@
     background-color: rgba(255, 255, 255, 0.08);
   }
 
-  /* 工作区主板块（不透明深色大圆角板块，与左侧 Mica 分层）
+  /* 连续工作区，使用面板分隔而不是浮动卡片。
    * 用法：包裹在 App.tsx 右侧工作区外层 */
   .work-surface {
-    @apply rounded-2xl bg-surface-work border border-surface-border;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12), 0 8px 24px rgba(0, 0, 0, 0.16);
+    @apply bg-surface-work;
     overflow: hidden;
+    border-top-left-radius: var(--codewhale-radius);
   }
 
-  /* 通用浮层卡片（大圆角，在工作区板块之上的轻量浮起）
+  /* 通用浮层，仅用于明确分层的菜单和对话框。
    * 注意：不加 backdrop-blur，避免模糊底层 */
   .surface {
-    @apply rounded-xl bg-surface-elevated border border-surface-border;
+    @apply rounded-md bg-surface-elevated border border-surface-border;
   }
 
   .surface-raised {
-    @apply rounded-2xl bg-surface-elevated border border-surface-border;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12), 0 8px 24px rgba(0, 0, 0, 0.16);
+    @apply rounded-lg bg-surface-elevated border border-surface-border;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
   }
 
-  /* 输入框/消息编辑器容器（超大圆角，浮起样式） */
+  /* 输入框/消息编辑器容器 */
   .composer {
-    @apply rounded-3xl bg-surface-elevated border border-surface-border;
+    @apply rounded-lg bg-surface-elevated border border-surface-border;
   }
 
-  /* 小标签/芯片（胶囊形圆角） */
+  /* 小标签/芯片 */
   .chip {
-    @apply inline-flex items-center rounded-full px-2.5 py-1 text-xs text-text-secondary;
+    @apply inline-flex items-center rounded-md px-2 py-0.5 text-xs text-text-secondary;
     background-color: rgba(255, 255, 255, 0.08);
   }
 
-  /* 上下文标签（可点击，大圆角） */
+  /* 上下文标签 */
   .context-tag {
-    @apply inline-flex items-center rounded-full px-3 py-1.5 text-sm cursor-pointer;
+    @apply inline-flex items-center rounded-md px-2 py-1 text-sm cursor-pointer;
     background-color: rgba(255, 255, 255, 0.06);
     color: rgba(255, 255, 255, 0.55);
     transition: all 200ms cubic-bezier(0.34, 1.56, 0.64, 1);

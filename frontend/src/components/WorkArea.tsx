@@ -16,7 +16,6 @@ import type { useResizableLayout } from '../hooks/useResizableLayout'
 import { FileTreePanel } from './FileTreePanel'
 import { ChatPanel } from './ChatPanel'
 import { RightPanel } from './RightPanel'
-import { StatusBar } from './StatusBar'
 
 type Layout = ReturnType<typeof useResizableLayout>
 
@@ -42,7 +41,7 @@ export function WorkArea({ layout }: WorkAreaProps) {
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* === 左栏：文件树面板 === */}
         <div
-          className={`flex-shrink-0 overflow-hidden transition-all duration-300 ease-bounce ${leftCollapsed ? 'w-0' : ''}`}
+          className={`flex-shrink-0 overflow-hidden transition-all duration-150 ease-out ${leftCollapsed ? 'w-0' : ''}`}
           style={{ width: leftCollapsed ? 0 : leftWidth }}
         >
           {!leftCollapsed && (
@@ -66,7 +65,7 @@ export function WorkArea({ layout }: WorkAreaProps) {
         {/* === 右栏：多功能面板 === */}
         {!rightCollapsed && <div className="splitter" onMouseDown={startDragRight} />}
         <div
-          className={`flex-shrink-0 overflow-hidden transition-all duration-300 ease-bounce ${rightCollapsed ? 'w-0' : ''}`}
+          className={`flex-shrink-0 overflow-hidden transition-all duration-150 ease-out ${rightCollapsed ? 'w-0' : ''}`}
           style={{ width: rightCollapsed ? 0 : rightWidth }}
         >
           {!rightCollapsed && (
@@ -76,9 +75,6 @@ export function WorkArea({ layout }: WorkAreaProps) {
           )}
         </div>
       </div>
-
-      {/* === 底部状态条 === */}
-      <StatusBar />
     </div>
   )
 }

@@ -1,6 +1,6 @@
 # CodeWhale Server · HTTP API 文档
 
-独立 Rust 后端服务，封装 DeepSeek V4-Flash 调用、会话管理、本地工具执行，对外提供 REST + SSE 接口供 WinUI 前端调用。
+独立 Rust 后端服务，封装 DeepSeek 调用、会话管理与本地工具执行，对 Tauri + React 桌面端提供 REST + SSE 接口。
 
 - **Base URL**: `http://127.0.0.1:8787`
 - **Content-Type**: `application/json`（除 `/api/chat` 为 `text/event-stream`）
@@ -26,7 +26,7 @@
   "timestamp": "2026-07-25T08:00:00+00:00"
 }
 ```
-> 别名 `GET /health` 等价。WinUI 启动时轮询此接口判断后端是否在线。
+> 别名 `GET /health` 等价。桌面端启动时轮询此接口判断后端是否在线。
 
 ---
 
@@ -286,6 +286,8 @@ data: {"sessionId":"0c1f3a2b-..."}
 
 ## 端点速查
 
+### 基础端点
+
 | 方法 | 路径 | 用途 |
 |---|---|---|
 | GET | `/ping` | 健康检测 |
@@ -297,12 +299,133 @@ data: {"sessionId":"0c1f3a2b-..."}
 | GET / PUT | `/api/params` | 读取 / 更新推理参数 |
 | POST | `/api/project/load` | 加载项目目录 |
 | GET | `/api/project` | 查询项目目录 |
+| GET | `/api/project/tree` | 获取文件树 |
 | POST | `/api/tools/file/read` | 读文件 |
 | POST | `/api/tools/file/write` | 写文件 |
 | POST | `/api/tools/git` | Git 命令 |
 | POST | `/api/tools/shell` | Shell 命令 |
 | GET / PUT | `/api/config/deepseek` | 读取 / 写入 Key |
 | POST | `/api/config/deepseek/test` | 探测 Key 有效性 |
+
+### 文件系统
+
+| 方法 | 路径 | 用途 |
+|---|---|---|
+| POST | `/api/files` | 创建文件 |
+| POST | `/api/files/read` | 读取文件 |
+| POST | `/api/files/write` | 写入文件 |
+| PATCH | `/api/files/rename` | 重命名文件 |
+| POST | `/api/files/reveal` | 在资源管理器显示 |
+| DELETE | `/api/files` | 删除文件 |
+
+### Diff 管理
+
+| 方法 | 路径 | 用途 |
+|---|---|---|
+| POST | `/api/diffs` | 注册 Diff |
+| POST | `/api/diffs/apply-all` | 应用全部 Diff |
+| POST | `/api/diffs/:id/apply` | 应用单个 Diff |
+| POST | `/api/diffs/:id/reject` | 拒绝单个 Diff |
+| POST | `/api/diffs/:id/revert` | 还原单个 Diff |
+| POST | `/api/diffs/:id/hunks/:hunk_index/apply` | 应用单个 Hunk |
+| POST | `/api/diffs/:id/hunks/:hunk_index/reject` | 拒绝单个 Hunk |
+| GET | `/api/diffs/:session_id` | 列出会话 Diff |
+
+### 代办任务
+
+| 方法 | 路径 | 用途 |
+|---|---|---|
+| GET / POST | `/api/todos` | 列表 / 创建 |
+| GET / DELETE | `/api/todos/:id` | 详情 / 删除 |
+| POST | `/api/todos/:id/status` | 更新状态 |
+| GET | `/api/todos/session/:session_id` | 列出会话代办 |
+
+### 审批
+
+| 方法 | 路径 | 用途 |
+|---|---|---|
+| GET / POST | `/api/approvals` | 列表 / 创建 |
+| GET | `/api/approvals/pending` | 列出待审批 |
+| GET | `/api/approvals/:id` | 获取详情 |
+| POST | `/api/approvals/:id/decide` | 批准/拒绝 |
+
+### 配置（完整）
+
+| 方法 | 路径 | 用途 |
+|---|---|---|
+| GET / PUT | `/api/config/permission` | 权限配置 |
+| GET / PUT | `/api/config/model-profiles` | 多模型档案 |
+| POST | `/api/config/profiles` | 添加 Profile |
+| PUT / DELETE | `/api/config/profiles/:id` | 更新/删除 Profile |
+| POST | `/api/config/profiles/:id/active` | 设为激活 |
+| GET / PUT | `/api/config/rag` | RAG 配置 |
+| GET / PUT | `/api/config/formatter` | 格式化配置 |
+| GET / PUT | `/api/config/cache` | 缓存配置 |
+| POST | `/api/config/cache/clear-session` | 清除会话缓存 |
+| POST | `/api/config/cache/clear-memory` | 清除项目记忆 |
+| GET | `/api/config/cache/stats` | 缓存统计 |
+| GET / PUT | `/api/config/appearance` | 外观配置 |
+| GET / PUT / POST | `/api/config/shortcuts` | 快捷键 |
+| GET / PUT | `/api/config/security` | 安全配置 |
+| GET | `/api/config/security/export-audit` | 导出审计日志 |
+| GET | `/api/model-profiles` | 模型档案列表 |
+
+### Skill 技能
+
+| 方法 | 路径 | 用途 |
+|---|---|---|
+| GET / POST | `/api/skills` | 列表 / 创建 |
+| GET / DELETE | `/api/skills/:id` | 详情 / 删除 |
+| PUT | `/api/skills/:id/toggle` | 切换启用/禁用 |
+| PUT | `/api/skills/:id/enabled` | 设置启用状态 |
+| POST | `/api/skills/:id/export` | 导出技能 |
+| GET | `/api/skills/config` | 获取技能配置 |
+| POST | `/api/skills/find` | 模糊匹配技能 |
+| POST | `/api/skills/import` | 导入技能包 |
+| POST | `/api/skills/default-permission` | 设置默认权限 |
+| GET / PUT | `/api/skills/agents-md` | 管理 AGENTS.md |
+
+### MCP 插件
+
+| 方法 | 路径 | 用途 |
+|---|---|---|
+| GET / POST | `/api/mcp` | 列表 / 注册 |
+| DELETE | `/api/mcp/:id` | 删除插件 |
+| PUT | `/api/mcp/:id/toggle` | 切换启用/禁用 |
+| POST | `/api/mcp/:id/enabled` | 设置启用状态 |
+| POST | `/api/mcp/:id/connect` | 连接插件 |
+| POST | `/api/mcp/:id/disconnect` | 断开插件 |
+| GET / POST | `/api/mcp/services` | MCP 服务列表 |
+| POST | `/api/mcp/global-enabled` | 全局启用开关 |
+| GET / PUT | `/api/mcp/high-risk/switch` | 高危插件开关 |
+| POST | `/api/mcp/call` | 调用插件工具 |
+
+### Git/GitHub 联动
+
+| 方法 | 路径 | 用途 |
+|---|---|---|
+| GET | `/api/git/status` | Git 状态 |
+| POST | `/api/git/diff` | Git Diff |
+| POST | `/api/git/commit` | Git Commit |
+| POST | `/api/git/branch` | Git 分支操作 |
+| POST | `/api/git/pr-review` | PR 评审 |
+| GET | `/api/git/log` | Git 日志 |
+
+### RAG 检索
+
+| 方法 | 路径 | 用途 |
+|---|---|---|
+| GET / POST | `/api/rag/index` | 获取/构建索引 |
+| POST | `/api/rag/recall` | RAG 召回 |
+| DELETE | `/api/rag/clear` | 清除索引 |
+
+### 代码沙箱
+
+| 方法 | 路径 | 用途 |
+|---|---|---|
+| POST | `/api/sandbox/exec` | 沙箱执行代码 |
+| GET | `/api/sandbox/languages` | 支持的语言列表 |
+| POST | `/api/sandbox/format` | 代码格式化 |
 
 ---
 

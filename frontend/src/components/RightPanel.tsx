@@ -42,22 +42,24 @@ export function RightPanel({ onClose }: RightPanelProps) {
   ]
 
   return (
-    <div className="h-full flex flex-col border-l border-white/5 bg-white/3">
+    <div className="h-full flex flex-col border-l border-white/8 bg-[#1b1b1b]">
       {/* === Tab 切换栏 === */}
-      <div className="flex items-center justify-between px-3 pt-3 border-b border-white/5 gap-2">
-        <div className="flex items-center gap-1">
+      <div className="flex items-center justify-between px-2 py-2 border-b border-white/8 gap-2">
+        <div className="flex items-center gap-0.5">
           {tabs.map((t) => (
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-xl transition-all duration-200 ease-bounce
+              className={`flex h-7 w-7 items-center justify-center text-xs rounded-md transition-colors duration-150 ease-out
                 ${tab === t.key
                   ? 'text-text-primary bg-white/10'
                   : 'text-text-tertiary hover:text-text-secondary hover:bg-white/8'
                 }`}
+              title={t.label}
+              aria-label={t.label}
             >
               <span className="opacity-80">{t.icon}</span>
-              {t.label}
+              <span className="sr-only">{t.label}</span>
             </button>
           ))}
         </div>

@@ -16,6 +16,7 @@
  */
 import { useState, useEffect } from 'react'
 import type { NavView } from '../App'
+import { SETTINGS_SECTIONS, type SettingsSection } from './SettingsPage'
 import { SkillListPanel } from './SkillListPanel'
 import { MCPManagerPanel } from './MCPManagerPanel'
 import { sessionsApi } from '../lib/api'
@@ -24,12 +25,16 @@ import type { Session } from '../types'
 interface SideNavProps {
   view: NavView
   onViewChange: (v: NavView) => void
+  onNewSession: () => void
+  onSessionSelect: (id: string) => void
+  settingsSection: SettingsSection
+  onSettingsSectionChange: (section: SettingsSection) => void
 }
 
 /** 技能/插件浮层内的子视图 */
 type SkillsPluginsTab = 'skills' | 'plugins'
 
-export function SideNav({ view, onViewChange }: SideNavProps) {
+export function SideNav({ view, onViewChange, onNewSession, onSessionSelect, settingsSection, onSettingsSectionChange }: SideNavProps) {
   const [sessions, setSessions] = useState<Session[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -86,11 +91,46 @@ export function SideNav({ view, onViewChange }: SideNavProps) {
     return text.includes(query.toLowerCase())
   })
 
+  if (view === 'settings') {
+    return (
+      <nav className="flex flex-col w-60 flex-shrink-0 select-none">
+        <div className="px-4 pt-4 pb-3">
+          <button
+            onClick={() => onViewChange('chat')}
+            className="text-sm text-text-primary lowercase hover:text-white transition-colors"
+          >
+            codewhale
+          </button>
+        </div>
+        <div className="px-4 pb-2 text-2xs uppercase tracking-wider text-text-tertiary">设置</div>
+        <nav className="flex-1 overflow-auto px-2 pb-3 space-y-1">
+          {SETTINGS_SECTIONS.map((item) => (
+            <button
+              key={item.key}
+              onClick={() => onSettingsSectionChange(item.key)}
+              className={`w-full text-left px-3 py-2.5 rounded-2xl transition-colors ${
+                settingsSection === item.key
+                  ? 'bg-white/10 text-text-primary'
+                  : 'text-text-secondary hover:bg-white/8 hover:text-text-primary'
+              }`}
+            >
+              <div className="text-xs">{item.label}</div>
+              <div className="mt-0.5 text-2xs text-text-tertiary truncate">{item.desc}</div>
+            </button>
+          ))}
+        </nav>
+        <div className="px-3 py-2 border-t border-white/5">
+          <NavAction icon={<BackToChatIcon />} label="返回对话" onClick={() => onViewChange('chat')} />
+        </div>
+      </nav>
+    )
+  }
+
   return (
-    <nav className="flex flex-col w-60 flex-shrink-0 border-r border-white/5 select-none">
+    <nav className="flex flex-col w-60 flex-shrink-0 select-none">
       {/* === 顶部：纯文字品牌名（无 icon 无下拉） === */}
       <div className="px-4 pt-4 pb-3">
-        <span className="text-sm font-bold text-text-primary tracking-tight lowercase">
+        <span className="text-sm font-semibold text-text-primary lowercase">
           codewhale
         </span>
       </div>
@@ -101,7 +141,10 @@ export function SideNav({ view, onViewChange }: SideNavProps) {
           icon={<PlusIcon />}
           label="新建对话"
           active={view === 'chat'}
-          onClick={() => onViewChange('chat')}
+          onClick={() => {
+            onViewChange('chat')
+            onNewSession()
+          }}
         />
         <NavAction
           icon={<TodoIcon />}
@@ -141,12 +184,11 @@ export function SideNav({ view, onViewChange }: SideNavProps) {
         {loading && (
           <div className="space-y-1">
             {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="px-3 py-2.5 rounded-xl mb-1 animate-pulse-soft">
-                <div className="flex items-center justify-between gap-2 mb-1">
+              <div key={i} className="px-3 py-2 rounded-[10px] mb-1 animate-pulse-soft">
+                <div className="flex items-center justify-between gap-2">
                   <div className="h-3 w-2/3 rounded bg-white/6" />
                   <div className="h-1.5 w-1.5 rounded-full bg-white/6" />
                 </div>
-                <div className="h-2 w-1/2 rounded bg-white/4" />
               </div>
             ))}
           </div>
@@ -180,22 +222,17 @@ export function SideNav({ view, onViewChange }: SideNavProps) {
                 onClick={() => {
                   setActiveSession(s.id)
                   onViewChange('chat')
+                  onSessionSelect(s.id)
                 }}
-                className={`w-full text-left px-3 py-2.5 rounded-xl mb-1 transition-all duration-200 ease-bounce group animate-slide-up-spring hover:scale-[1.01]
+                className={`w-full flex items-center gap-2 text-left px-3 py-2 rounded-[10px] mb-1 transition-colors group animate-slide-up-spring
                   ${isActive
                     ? 'bg-white/10 text-text-primary'
                     : 'text-text-secondary hover:bg-white/8 hover:text-text-primary'
                   }`}
                 style={{ animationDelay: `${index * 30}ms`, animationFillMode: 'both' }}
               >
-                <div className="flex items-center justify-between gap-2 mb-0.5">
-                  <span className="text-xs font-semibold truncate">{deriveTitle(s)}</span>
+                <span className="min-w-0 flex-1 text-xs truncate">{deriveTitle(s)}</span>
                   <StatusDot status={status} active={isActive} />
-                </div>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-2xs text-text-tertiary truncate">{derivePreview(s)}</span>
-                  <span className="text-2xs text-text-tertiary flex-shrink-0">{formatRelativeTime(s.updatedAt)}</span>
-                </div>
               </button>
             )
           })
@@ -207,7 +244,6 @@ export function SideNav({ view, onViewChange }: SideNavProps) {
         <NavAction
           icon={<SettingsIcon />}
           label="设置"
-          active={view === 'settings'}
           onClick={() => onViewChange('settings')}
         />
       </div>
@@ -303,23 +339,6 @@ function derivePreview(s: Session): string {
   return line.length > 40 ? line.slice(0, 40) + '…' : line
 }
 
-/** 相对时间：ISO -> 「刚刚 / N 分钟前 / N 小时前 / N 天前 / M/D」 */
-function formatRelativeTime(iso: string): string {
-  const then = new Date(iso).getTime()
-  if (Number.isNaN(then)) return ''
-  const diff = Math.max(0, Date.now() - then)
-  const sec = Math.floor(diff / 1000)
-  if (sec < 60) return '刚刚'
-  const min = Math.floor(sec / 60)
-  if (min < 60) return `${min} 分钟前`
-  const hr = Math.floor(min / 60)
-  if (hr < 24) return `${hr} 小时前`
-  const day = Math.floor(hr / 24)
-  if (day < 7) return `${day} 天前`
-  const d = new Date(iso)
-  return `${d.getMonth() + 1}/${d.getDate()}`
-}
-
 /* ============== 子组件 ============== */
 
 /** 极简导航行：icon + 文字，无按钮感（透明，hover 圆润浮起） */
@@ -337,7 +356,7 @@ function NavAction({
   return (
     <button
       onClick={onClick}
-      className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium transition-all duration-200 ease-bounce
+      className={`w-full flex items-center gap-3 px-3 py-2 rounded-[10px] text-xs font-medium transition-colors
         ${active
           ? 'bg-white/10 text-text-primary'
           : 'text-text-secondary hover:bg-white/8 hover:text-text-primary'
@@ -413,6 +432,14 @@ function SettingsIcon() {
         strokeWidth="1.3"
         strokeLinecap="round"
       />
+    </svg>
+  )
+}
+
+function BackToChatIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+      <path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   )
 }

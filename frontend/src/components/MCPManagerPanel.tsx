@@ -17,6 +17,7 @@ import { useMcpStore, selectConnectedCount, selectHighRiskPlugins } from '../sto
 import { useDialogStore } from '../stores/dialog'
 import { useChatStore } from '../stores/chat'
 import type { McpCategory, McpConfig, McpTransport } from '../types'
+import { SelectMenu } from './SettingsPage'
 
 interface MCPManagerPanelProps {
   /** 浮层模式：true 时渲染为模态遮罩，需配合 onClose */
@@ -411,27 +412,18 @@ function RegisterPluginModal({
           </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="传输协议">
-              <select
+              <SelectMenu
                 value={transport}
-                onChange={(e) => setTransport(e.target.value as McpTransport)}
-                className="input-base"
-              >
-                <option value="stdio">stdio</option>
-                <option value="sse">sse</option>
-              </select>
+                onChange={(value) => setTransport(value as McpTransport)}
+                options={[{ value: 'stdio', label: 'stdio' }, { value: 'sse', label: 'sse' }]}
+              />
             </Field>
             <Field label="分类">
-              <select
+              <SelectMenu
                 value={category}
-                onChange={(e) => setCategory(e.target.value as McpCategory)}
-                className="input-base"
-              >
-                {CATEGORY_OPTIONS.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
+                onChange={(value) => setCategory(value as McpCategory)}
+                options={CATEGORY_OPTIONS.map((value) => ({ value, label: value }))}
+              />
             </Field>
           </div>
           {transport === 'stdio' ? (
@@ -474,17 +466,11 @@ function RegisterPluginModal({
           )}
           <div className="grid grid-cols-3 gap-3">
             <Field label="权限范围">
-              <select
+              <SelectMenu
                 value={permissionScope}
-                onChange={(e) => setPermissionScope(e.target.value)}
-                className="input-base"
-              >
-                <option value="workspace">workspace</option>
-                <option value="file">file</option>
-                <option value="network">network</option>
-                <option value="shell">shell</option>
-                <option value="database">database</option>
-              </select>
+                onChange={setPermissionScope}
+                options={['workspace', 'file', 'network', 'shell', 'database'].map((value) => ({ value, label: value }))}
+              />
             </Field>
             <Field label="超时（秒）">
               <input
@@ -499,14 +485,11 @@ function RegisterPluginModal({
               />
             </Field>
             <Field label="高危">
-              <select
+              <SelectMenu
                 value={highRisk ? '1' : '0'}
-                onChange={(e) => setHighRisk(e.target.value === '1')}
-                className="input-base"
-              >
-                <option value="0">否</option>
-                <option value="1">是</option>
-              </select>
+                onChange={(value) => setHighRisk(value === '1')}
+                options={[{ value: '0', label: '否' }, { value: '1', label: '是' }]}
+              />
             </Field>
           </div>
         </div>

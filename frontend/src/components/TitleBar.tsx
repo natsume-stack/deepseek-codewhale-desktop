@@ -47,7 +47,7 @@ export function TitleBar({ model }: TitleBarProps) {
   return (
     <div
       data-tauri-drag-region
-      className="relative flex items-center justify-between h-9 px-3 flex-shrink-0 border-b border-white/5 select-none"
+      className="relative flex items-center justify-between h-9 px-3 flex-shrink-0 select-none"
     >
       {/* === 左侧：文字菜单（无 logo 无应用名，避免与 SideNav 顶部重复） === */}
       <nav className="flex items-center gap-0.5" data-no-drag>

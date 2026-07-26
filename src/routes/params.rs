@@ -35,8 +35,8 @@ pub async fn update_params(
         cfg.inference.cache_enabled = c;
     }
     if let Some(cl) = body.context_length {
-        if cl == 0 {
-            return Err(AppError::BadRequest("contextLength 必须 > 0".into()));
+        if cl > 1_000_000 {
+            return Err(AppError::BadRequest("contextLength 最大为 1,000,000".into()));
         }
         cfg.inference.context_length = cl;
     }

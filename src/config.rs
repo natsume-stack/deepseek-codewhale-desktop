@@ -61,7 +61,7 @@ pub struct DeepSeekConfig {
 pub struct InferenceDefaults {
     pub reasoning_effort: ReasoningEffort,
     pub cache_enabled: bool,
-    /// 上下文窗口: 保留最近 N 条历史消息 (含 user/assistant)。
+    /// 上下文 Token 预算。0 表示仅发送当前消息，最大 1,000,000。
     pub context_length: usize,
 }
 
@@ -156,7 +156,7 @@ impl Default for AppConfig {
             inference: InferenceDefaults {
                 reasoning_effort: ReasoningEffort::Medium,
                 cache_enabled: true,
-                context_length: 20,
+                context_length: 32_768,
             },
             permission: PermissionConfig::default(),
             model_profiles: ModelProfilesConfig::default(),

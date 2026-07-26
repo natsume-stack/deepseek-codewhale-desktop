@@ -17,6 +17,7 @@ import { configApi, paramsApi, type SetDeepSeekBody } from '../lib/api'
 import { useChatStore } from '../stores/chat'
 import { useDialogStore } from '../stores/dialog'
 import type { DeepSeekConfig, InferenceParams, ReasoningEffort } from '../types'
+import { SelectMenu } from './SettingsPage'
 
 const EFFORTS: { value: ReasoningEffort; label: string; hint: string }[] = [
   { value: 'minimal', label: '极速', hint: '最低推理开销' },
@@ -197,18 +198,14 @@ export function ParamsPanel({ embedded = false }: { embedded?: boolean }) {
               />
             </Field>
             <Field label="模型">
-              <select
-                className="input-base"
+              <SelectMenu
                 value={MODELS.includes(modelInput as typeof MODELS[number]) ? modelInput : ''}
-                onChange={(e) => setModelInput(e.target.value || 'deepseek-chat')}
-              >
-                {MODELS.map((m) => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-                {!MODELS.includes(modelInput as typeof MODELS[number]) && (
-                  <option value={modelInput}>{modelInput}（自定义）</option>
-                )}
-              </select>
+                onChange={(value) => setModelInput(value || 'deepseek-chat')}
+                options={[
+                  ...MODELS.map((value) => ({ value, label: value })),
+                  ...(!MODELS.includes(modelInput as typeof MODELS[number]) ? [{ value: modelInput, label: `${modelInput}（自定义）` }] : []),
+                ]}
+              />
             </Field>
             <div className="flex gap-1.5">
               <button

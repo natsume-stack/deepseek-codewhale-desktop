@@ -27,7 +27,7 @@
 | 🧪 **代码沙箱** | Rust / Go / Python / TS / Shell 多语言运行 + 失败自动修复建议 |
 | 🔗 **Git/GitHub 联动** | Conventional Commits 自动推断 + PR 评审 |
 | 🎨 **Codex 风格 UI** | 三栏布局、Mica 透明、圆润交互、200ms 缓动 |
-| 🗂️ **多会话并行标签** | 各会话上下文隔离、独立缓存前缀、localStorage 持久化 |
+| 🗂️ **最近会话工作流** | 左侧单行最近会话列表，切换时加载独立上下文与缓存前缀 |
 
 ---
 
@@ -43,8 +43,8 @@
 │  Codex 风格三栏布局            │  REST + SSE 双流                    │
 │                                │                                     │
 │  ┌──────────┐ ┌────────────┐  │  ┌──────────────────────────────┐  │
-│  │ 文件树    │ │ 会话标签栏  │  │  │ Reasonix 前缀缓存层          │  │
-│  │ SideNav  │ │ SessionTabs│  │  │ cache.rs (5 层字节稳定)       │  │
+│  │ 文件树    │ │ 最近会话列表 │  │  │ Reasonix 前缀缓存层          │  │
+│  │ SideNav  │ │ SideNav    │  │  │ cache.rs (5 层字节稳定)       │  │
 │  └────┬─────┘ └─────┬──────┘  │  └──────────────────────────────┘  │
 │       │             │         │  ┌──────────────────────────────┐  │
 │  ┌────▼─────────────▼──────┐  │  │ Myers Hunk Diff              │  │
@@ -112,19 +112,23 @@ cp .env.example .env
 **方式 A：完整 Tauri 桌面应用（推荐）**
 
 ```powershell
-# 进入前端目录
+# 一键启动（Windows）
+start.bat dev
+
+# 或分步启动
 cd frontend
 npm install
-# 启动 Tauri 开发模式（自动编译后端 sidecar + 前端 + 桌面壳）
 npm run tauri:dev
 ```
 
 **方式 B：仅后端（调试 API）**
 
 ```powershell
-# 项目根目录
-.\start.ps1            # debug 模式
-.\start.ps1 -Build     # release 编译后运行
+# 一键启动后端
+start.bat backend
+
+# 或直接 cargo run
+cargo run
 # 监听 http://127.0.0.1:8787
 ```
 
@@ -182,7 +186,6 @@ deepseek-codewhale-desktop/
 │   │   │   ├── DiffViewer.tsx    # Hunk 粒度 Diff 查看器
 │   │   │   ├── RightPanel.tsx    # 右侧三 Tab（变更/代办/RAG）
 │   │   │   ├── ApprovalDialog.tsx# 审批浮窗
-│   │   │   ├── SessionTabs.tsx   # 多会话标签
 │   │   │   ├── ModelSwitcher.tsx # 多模型切换
 │   │   │   ├── CodeToolbar.tsx   # 代码悬浮工具栏
 │   │   │   └── ...
@@ -339,11 +342,8 @@ deepseek-codewhale-desktop/
 
 ## 📖 文档
 
-- [BUILD.md](./BUILD.md) — 编译环境与打包说明
-- [API.md](./API.md) — 完整 API 文档
-- [INTEGRATION.md](./INTEGRATION.md) — 模块集成关系
-- [RISKS.md](./RISKS.md) — 已知风险与规避
-- [ACCEPTANCE.md](./ACCEPTANCE.md) — 验收点核对
+- [ARCHITECTURE.md](./ARCHITECTURE.md) — **项目架构与交接文档（主要）**
+- [API.md](./API.md) — 完整 API 端点速查
 - [AGENT_ROADMAP.md](./AGENT_ROADMAP.md) — Agent 能力路线图
 
 ---

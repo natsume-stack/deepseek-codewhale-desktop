@@ -141,8 +141,8 @@ export const configApi = {
   // ---- 模型 & API 多凭证 ----
   getModelProfiles: () => request<ModelProfilesConfig>('GET', '/config/model-profiles'),
   setModelProfiles: (body: ModelProfilesConfig) => request<ModelProfilesConfig>('PUT', '/config/model-profiles', body),
-  addProfile: (body: ApiProfile) => request<ApiProfile>('POST', '/config/profiles', body),
-  updateProfile: (id: string, body: ApiProfile) => request<ApiProfile>('PUT', `/config/profiles/${encodeURIComponent(id)}`, body),
+  addProfile: (body: ApiProfile) => request<{ ok: boolean; profile: ApiProfile }>('POST', '/config/profiles', body),
+  updateProfile: (id: string, body: ApiProfile) => request<{ ok: boolean; profile: ApiProfile }>('PUT', `/config/profiles/${encodeURIComponent(id)}`, body),
   deleteProfile: (id: string) => request<{ deleted: boolean }>('DELETE', `/config/profiles/${encodeURIComponent(id)}`),
   setActiveProfile: (id: string) => request<{ activeId: string }>('POST', `/config/profiles/${encodeURIComponent(id)}/active`),
 
@@ -169,7 +169,7 @@ export const configApi = {
   // ---- 快捷键 ----
   getShortcuts: () => request<ShortcutsConfig>('GET', '/config/shortcuts'),
   setShortcuts: (body: ShortcutsConfig) => request<ShortcutsConfig>('PUT', '/config/shortcuts', body),
-  resetShortcuts: () => request<ShortcutsConfig>('POST', '/config/shortcuts'),
+  resetShortcuts: () => request<{ ok: boolean; shortcuts: ShortcutsConfig }>('POST', '/config/shortcuts'),
 
   // ---- 安全 ----
   getSecurity: () => request<SecurityConfig>('GET', '/config/security'),

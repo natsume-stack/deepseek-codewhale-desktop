@@ -194,17 +194,17 @@ impl SessionManager {
         }
     }
 
-    /// 返回裁剪到 context_length 的消息快照 (含可选 system 前缀)。
+    /// 返回裁剪到上下文 Token 预算的消息快照 (含可选 system 前缀)。
     ///
     /// Reasonix 集成：若 cache 存在且已初始化（system_prefix 非空），
     /// 按"system(前 3 层合并) → history → current_message"分层顺序构建，
     /// 其中 system 包含 system_prefix + project_memory + mounted_files，
-    /// history 仅裁剪尾部以满足 context_length（保留前缀字节稳定）。
+    /// history 仅裁剪尾部以满足 Token 预算（保留前缀字节稳定）。
     /// 否则回退到旧逻辑。
     pub async fn message_snapshot(
         &self,
         id: &str,
-        context_length: usize,
+        context_token_budget: usize,
         system_prefix: Option<String>,
     ) -> AppResult<Vec<ChatMessage>> {
         let map = self.inner.read().await;
@@ -214,18 +214,16 @@ impl SessionManager {
 
         if let Some(cache) = s.cache.as_ref() {
             if !cache.system_prefix.is_empty() {
-                return Ok(build_snapshot_from_cache(cache, context_length));
+                return Ok(build_snapshot_from_cache(cache, context_token_budget));
             }
         }
 
-        // 旧逻辑：取尾部 N 条 + 可选 system 前缀
-        let total = s.messages.len();
-        let take = total.min(context_length);
-        let mut out: Vec<ChatMessage> = Vec::with_capacity(take + 1);
+        let history = trim_to_token_budget(&s.messages, context_token_budget);
+        let mut out: Vec<ChatMessage> = Vec::with_capacity(history.len() + 1);
         if let Some(sys) = system_prefix {
             out.push(ChatMessage::system(sys));
         }
-        out.extend(s.messages[total.saturating_sub(take)..].iter().cloned());
+        out.extend(history);
         Ok(out)
     }
 
@@ -288,6 +286,20 @@ impl SessionManager {
         Ok(())
     }
 
+    /// 清除指定会话已初始化的项目记忆，并刷新前缀指纹。
+    pub async fn clear_project_memory(&self, id: &str) -> AppResult<()> {
+        let mut map = self.inner.write().await;
+        let session = map
+            .get_mut(id)
+            .ok_or_else(|| AppError::SessionNotFound(id.to_string()))?;
+        if let Some(cache) = session.cache.as_mut() {
+            cache.project_memory.clear();
+            cache.recompute_fingerprint();
+        }
+        session.updated_at = Utc::now();
+        Ok(())
+    }
+
     /// 获取会话缓存统计（命中率、指纹、长度等）。
     pub async fn get_cache_stats(&self, id: &str) -> AppResult<CacheStats> {
         let map = self.inner.read().await;
@@ -314,9 +326,9 @@ impl SessionManager {
 ///
 /// 分层顺序：
 ///   1. system: system_prefix + project_memory + mounted_files（合并为单条 system）
-///   2. history: 转为 user/assistant 消息（按 context_length 裁剪尾部）
+///   2. history: 转为 user/assistant 消息（按 Token 预算裁剪尾部）
 ///   3. current_message: 作为最后一条 user 消息
-fn build_snapshot_from_cache(cache: &PrefixCache, context_length: usize) -> Vec<ChatMessage> {
+fn build_snapshot_from_cache(cache: &PrefixCache, context_token_budget: usize) -> Vec<ChatMessage> {
     // 1. 合并 system 层
     let mut sys = String::new();
     sys.push_str(&cache.system_prefix);
@@ -334,11 +346,18 @@ fn build_snapshot_from_cache(cache: &PrefixCache, context_length: usize) -> Vec<
         }
     }
 
-    // 2. history 裁剪：保留尾部最多 context_length-1 条（留 1 条给 current_message）
-    let history_cap = context_length.saturating_sub(1).max(1);
-    let hist_len = cache.history.len();
-    let hist_start = hist_len.saturating_sub(history_cap);
-    let history_slice = &cache.history[hist_start..];
+    // 2. history 裁剪：在 Token 预算内保留最新消息，当前消息始终单独保留。
+    let mut used = 0usize;
+    let mut history_slice = Vec::new();
+    for message in cache.history.iter().rev() {
+        let estimate = estimate_tokens(&message.content);
+        if used.saturating_add(estimate) > context_token_budget {
+            break;
+        }
+        used = used.saturating_add(estimate);
+        history_slice.push(message);
+    }
+    history_slice.reverse();
 
     let mut out: Vec<ChatMessage> = Vec::with_capacity(history_slice.len() + 2);
     out.push(ChatMessage::system(sys));
@@ -359,4 +378,23 @@ fn build_snapshot_from_cache(cache: &PrefixCache, context_length: usize) -> Vec<
         out.push(ChatMessage::user(cache.current_message.clone()));
     }
     out
+}
+
+fn estimate_tokens(content: &str) -> usize {
+    content.chars().count().div_ceil(4).max(1)
+}
+
+fn trim_to_token_budget(messages: &[ChatMessage], token_budget: usize) -> Vec<ChatMessage> {
+    let mut used = 0usize;
+    let mut kept = Vec::new();
+    for message in messages.iter().rev() {
+        let estimate = estimate_tokens(&message.content);
+        if used.saturating_add(estimate) > token_budget {
+            break;
+        }
+        used = used.saturating_add(estimate);
+        kept.push(message.clone());
+    }
+    kept.reverse();
+    kept
 }

@@ -22,23 +22,6 @@ frontend/src-tauri/gen/schemas
 .pnp.*
 .yarn/*
 
-# ---------- .NET / WinUI3 ----------
-CodeWhale/bin
-CodeWhale/obj
-CodeWhale/.vs
-*.user
-*.suo
-*.userosscache
-*.sln.docstates
-*.rsuser
-*.pdb
-*.dll
-*.exe
-*.cache
-project.lock.json
-project.fragment.lock.json
-artifacts/
-
 # ---------- Tauri ----------
 *.msi
 *.exe
@@ -90,6 +73,10 @@ out/
 coverage/
 *.lcov
 .nyc_output/
+
+# ---------- Removed legacy WinUI build output ----------
+CodeWhale/bin/
+CodeWhale/obj/
 
 # ---------- 其他 ----------
 .codewhale

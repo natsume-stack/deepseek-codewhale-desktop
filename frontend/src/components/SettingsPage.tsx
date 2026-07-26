@@ -67,7 +67,7 @@ import type {
 /* ============================================================
  * 分类元数据
  * ============================================================ */
-type SettingsSection =
+export type SettingsSection =
   | 'model' | 'api' | 'permission' | 'skill' | 'mcp'
   | 'rag' | 'formatter' | 'cache' | 'appearance'
   | 'shortcuts' | 'security' | 'about'
@@ -78,7 +78,7 @@ interface SectionMeta {
   desc: string
 }
 
-const SECTIONS: SectionMeta[] = [
+export const SETTINGS_SECTIONS: SectionMeta[] = [
   { key: 'model', label: '模型配置', desc: '推理强度、上下文缓存' },
   { key: 'api', label: 'API 服务商', desc: '多模型多凭证管理' },
   { key: 'permission', label: '权限管控', desc: 'Agent 操作沙盒' },
@@ -123,7 +123,7 @@ const DEFAULT_CACHE_CONFIG: CacheDebugConfig = {
 const DEFAULT_APPEARANCE: AppearanceConfig = {
   micaEnabled: true,
   theme: 'dark',
-  cornerRadius: 8,
+  cornerRadius: 23,
   animationDurationMs: 200,
   codeHighlightTheme: 'github-dark',
 }
@@ -212,11 +212,20 @@ const MCP_PERMISSION_SCOPES: { value: McpPermissionScope; label: string }[] = [
 const ToastContext = createContext<(msg: string) => void>(() => {})
 const useToast = () => useContext(ToastContext)
 
+/** Apply persisted appearance settings immediately instead of waiting for restart. */
+export function applyAppearanceConfig(config: AppearanceConfig) {
+  const root = document.getElementById('root')
+  if (!root) return
+  root.dataset.codewhaleTheme = config.theme === 'light' ? 'light' : 'dark'
+  root.style.setProperty('--codewhale-radius', `${config.cornerRadius}px`)
+  root.style.setProperty('--codewhale-transition', `${config.animationDurationMs}ms`)
+  root.style.setProperty('--codewhale-code-theme', config.codeHighlightTheme)
+}
+
 /* ============================================================
  * 主组件
  * ============================================================ */
-export function SettingsPage() {
-  const [section, setSection] = useState<SettingsSection>('model')
+export function SettingsPage({ section }: { section: SettingsSection }) {
   const [toast, setToast] = useState<string | null>(null)
   const toastTimerRef = useRef<number | null>(null)
 
@@ -230,7 +239,7 @@ export function SettingsPage() {
     if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current)
   }, [])
 
-  const meta = SECTIONS.find((s) => s.key === section) ?? SECTIONS[0]
+  const meta = SETTINGS_SECTIONS.find((s) => s.key === section) ?? SETTINGS_SECTIONS[0]
 
   /** 返回按钮：派发自定义事件，App.tsx 可监听切回对话视图 */
   const handleBack = () => {
@@ -239,35 +248,8 @@ export function SettingsPage() {
 
   return (
     <ToastContext.Provider value={showToast}>
-      <div className="flex h-full w-full p-4 gap-4 overflow-hidden animate-page-transition">
-        {/* === 左侧导航（200px，大圆角，半透明） === */}
-        <aside className="w-[220px] flex-shrink-0 rounded-2xl border border-white/6 bg-surface-elevated/60 flex flex-col overflow-hidden">
-          <div className="px-5 py-4 border-b border-white/5">
-            <div className="text-2xs uppercase tracking-wider text-text-tertiary font-semibold">
-              设置
-            </div>
-          </div>
-          <nav className="flex-1 overflow-auto p-3 space-y-1">
-            {SECTIONS.map((s, index) => (
-              <button
-                key={s.key}
-                onClick={() => setSection(s.key)}
-                className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-200 ease-bounce animate-slide-up-spring hover:scale-[1.01]
-                  ${section === s.key
-                    ? 'bg-white/10 text-text-primary'
-                    : 'text-text-secondary hover:bg-white/8 hover:text-text-primary'
-                  }`}
-                style={{ animationDelay: `${index * 30}ms`, animationFillMode: 'both' }}
-              >
-                <div className="text-sm font-medium">{s.label}</div>
-                <div className="text-2xs text-text-tertiary mt-0.5 truncate">{s.desc}</div>
-              </button>
-            ))}
-          </nav>
-        </aside>
-
-        {/* === 右侧内容 === */}
-        <main className="flex-1 min-w-0 rounded-2xl border border-white/6 bg-surface-elevated/60 flex flex-col overflow-hidden">
+      <div className="h-full w-full p-4 overflow-hidden animate-page-transition">
+        <main className="h-full min-w-0 rounded-[23px] border border-white/6 bg-surface-elevated/60 flex flex-col overflow-hidden">
           {/* 顶部：返回按钮 + 当前 Section 标题 */}
           <div className="flex items-center gap-3 px-5 py-4 border-b border-white/5">
             <button
@@ -428,6 +410,59 @@ function Slider({
           disabled:cursor-not-allowed [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:shadow-md [&::-webkit-slider-thumb]:transition-transform [&::-webkit-slider-thumb]:hover:scale-110"
       />
     </div>
+  )
+}
+
+export function SelectMenu({
+  value,
+  options,
+  disabled = false,
+  onChange,
+}: {
+  value: string
+  options: Array<{ value: string; label: string }>
+  disabled?: boolean
+  onChange: (value: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const selected = options.find((option) => option.value === value) ?? options[0]
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setOpen((visible) => !visible)}
+        className="input-base flex items-center justify-between gap-3 text-left disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        <span className="truncate">{selected?.label ?? '请选择'}</span>
+        <ChevronDownIcon />
+      </button>
+      {open && !disabled && (
+        <div className="absolute z-40 mt-1 w-full overflow-hidden rounded-[12px] border border-white/10 bg-[#202022] p-1 shadow-raised">
+          {options.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => { onChange(option.value); setOpen(false) }}
+              className={`flex w-full items-center justify-between rounded-[8px] px-3 py-2 text-left text-xs transition-colors ${
+                option.value === value ? 'bg-white/12 text-text-primary' : 'text-text-secondary hover:bg-white/8 hover:text-text-primary'
+              }`}
+            >
+              <span>{option.label}</span>
+              {option.value === value && <span>✓</span>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ChevronDownIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="m4 6 4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   )
 }
 
@@ -770,10 +805,12 @@ function ModelSection() {
       <ConfigGroup title="上下文">
         <Slider
           label="上下文窗口"
-          desc="参与推理的历史消息条数"
+          desc="历史对话的 Token 预算，0 表示仅发送当前消息"
           value={ctxLen}
-          min={1}
-          max={100}
+          min={0}
+          max={1_000_000}
+          step={1_024}
+          unit=" tokens"
           onChange={(v) => {
             setCtxLen(v)
             void saveParams({ contextLength: v })
@@ -790,19 +827,15 @@ function ModelSection() {
 
       <ConfigGroup title="单会话绑定模型">
         <div className="px-3 py-2.5">
-          <select
-            className="input-base"
+          <SelectMenu
             value={activeProfileId}
-            onChange={(e) => void saveActiveProfile(e.target.value)}
             disabled={saving || !profiles || profiles.profiles.length === 0}
-          >
-            <option value="">（默认 DeepSeek 配置）</option>
-            {profiles?.profiles.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.displayName} ({p.provider}/{p.model})
-              </option>
-            ))}
-          </select>
+            onChange={(id) => void saveActiveProfile(id)}
+            options={[
+              { value: '', label: '（默认 DeepSeek 配置）' },
+              ...(profiles?.profiles.map((profile) => ({ value: profile.id, label: `${profile.displayName} (${profile.provider}/${profile.model})` })) ?? []),
+            ]}
+          />
           <div className="text-2xs text-text-tertiary mt-1.5">
             从「API 服务商」卡片管理的多套凭证中选择当前会话使用的模型。
           </div>
@@ -894,9 +927,10 @@ function ApiSection() {
     setError(null)
     try {
       if (editing) {
-        const updated = await configApi.updateProfile(editing.id, {
+        const { profile: updated } = await configApi.updateProfile(editing.id, {
           ...editing,
           ...form,
+          apiKeyMasked: form.apiKey,
           // 后端返回时再次 mask
         })
         setConfig((c) => c ? {
@@ -905,11 +939,11 @@ function ApiSection() {
         } : c)
         toast('已保存')
       } else {
-        const created = await configApi.addProfile({
+        const { profile: created } = await configApi.addProfile({
           id: '',
           name: form.name,
           provider: form.provider,
-          apiKeyMasked: '',
+          apiKeyMasked: form.apiKey,
           baseUrl: form.baseUrl,
           model: form.model,
           displayName: form.displayName,
@@ -1079,15 +1113,7 @@ function ProfileFormModal({
         </FormField>
         <div className="grid grid-cols-2 gap-2">
           <FormField label="服务商">
-            <select
-              className="input-base"
-              value={form.provider}
-              onChange={(e) => setForm({ ...form, provider: e.target.value })}
-            >
-              {API_PROVIDERS.map((p) => (
-                <option key={p.value} value={p.value}>{p.label}</option>
-              ))}
-            </select>
+            <SelectMenu value={form.provider} options={API_PROVIDERS} onChange={(provider) => setForm({ ...form, provider })} />
           </FormField>
           <FormField label="显示名">
             <input
@@ -1519,16 +1545,14 @@ function SkillSection() {
 
       <ConfigGroup title="技能执行默认权限">
         <div className="px-3 py-2.5">
-          <select
-            className="input-base"
+          <SelectMenu
             value={config?.defaultPermission ?? 'ask'}
-            onChange={(e) => void handleDefaultPerm(e.target.value as SkillsConfig['defaultPermission'])}
-          >
-            <option value="ask">每次询问</option>
-            <option value="readOnly">只读</option>
-            <option value="workspaceWrite">工作区写入</option>
-            <option value="fullAccess">完全访问</option>
-          </select>
+            onChange={(value) => void handleDefaultPerm(value as SkillsConfig['defaultPermission'])}
+            options={[
+              { value: 'ask', label: '每次询问' }, { value: 'readOnly', label: '只读' },
+              { value: 'workspaceWrite', label: '工作区写入' }, { value: 'fullAccess', label: '完全访问' },
+            ]}
+          />
           <div className="text-2xs text-text-tertiary mt-1.5">
             技能调用外部工具时的默认权限预设，可在每次调用时覆盖。
           </div>
@@ -1827,14 +1851,11 @@ function McpFormModal({
           />
         </FormField>
         <FormField label="传输协议">
-          <select
-            className="input-base"
+          <SelectMenu
             value={form.transport}
-            onChange={(e) => setForm({ ...form, transport: e.target.value as McpTransport })}
-          >
-            <option value="sse">SSE（HTTP 流）</option>
-            <option value="stdio">stdio（子进程）</option>
-          </select>
+            onChange={(transport) => setForm({ ...form, transport: transport as McpTransport })}
+            options={[{ value: 'sse', label: 'SSE（HTTP 流）' }, { value: 'stdio', label: 'stdio（子进程）' }]}
+          />
         </FormField>
         <FormField
           label="端点"
@@ -2379,6 +2400,7 @@ function AppearanceSection() {
     try {
       const c = await configApi.getAppearance().catch(() => DEFAULT_APPEARANCE)
       setConfig(c)
+      applyAppearanceConfig(c)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
       setConfig(DEFAULT_APPEARANCE)
@@ -2392,6 +2414,7 @@ function AppearanceSection() {
     try {
       const c = await configApi.setAppearance(next)
       setConfig(c)
+      applyAppearanceConfig(c)
       toast('已保存')
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -2446,9 +2469,9 @@ function AppearanceSection() {
         <Slider
           label="全局圆角"
           desc="浮层与卡片的圆角半径"
-          value={config?.cornerRadius ?? 8}
-          min={0}
-          max={20}
+          value={config?.cornerRadius ?? 23}
+          min={12}
+          max={32}
           step={1}
           unit=" px"
           onChange={(v) => update({ cornerRadius: v })}
@@ -2468,15 +2491,11 @@ function AppearanceSection() {
       <ConfigGroup title="代码高亮">
         <div className="px-3 py-2.5">
           <div className="text-sm text-text-primary mb-2">配色方案</div>
-          <select
-            className="input-base"
+          <SelectMenu
             value={config?.codeHighlightTheme ?? 'github-dark'}
-            onChange={(e) => update({ codeHighlightTheme: e.target.value })}
-          >
-            {CODE_THEMES.map((t) => (
-              <option key={t} value={t}>{t}</option>
-            ))}
-          </select>
+            onChange={(codeHighlightTheme) => update({ codeHighlightTheme })}
+            options={CODE_THEMES.map((theme) => ({ value: theme, label: theme }))}
+          />
         </div>
       </ConfigGroup>
     </ConfigCard>
@@ -2531,8 +2550,8 @@ function ShortcutsSection() {
   async function handleReset() {
     setError(null)
     try {
-      const c = await configApi.resetShortcuts()
-      setConfig(c)
+      const { shortcuts } = await configApi.resetShortcuts()
+      setConfig(shortcuts)
       toast('已重置为默认')
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))

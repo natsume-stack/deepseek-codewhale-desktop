@@ -28,12 +28,10 @@ import { useResizableLayout } from './hooks/useResizableLayout'
 import { TitleBar } from './components/TitleBar'
 import { SideNav } from './components/SideNav'
 import { WorkArea } from './components/WorkArea'
-import { SettingsPage } from './components/SettingsPage'
-import { SessionTabs } from './components/SessionTabs'
+import { SettingsPage, applyAppearanceConfig, type SettingsSection } from './components/SettingsPage'
 import { DialogHost } from './components/DialogHost'
 import { ApprovalDialog } from './components/ApprovalDialog'
 import { useFileTreeStore } from './stores/fileTree'
-import { useSessionsStore } from './stores/sessions'
 import { useChatStore } from './stores/chat'
 import { configApi, projectApi } from './lib/api'
 
@@ -43,15 +41,12 @@ export default function App() {
   const layout = useResizableLayout()
   const [view, setView] = useState<NavView>('chat')
   const [model, setModel] = useState<string>('deepseek-chat')
-
-  // 多会话标签状态（仅订阅 tabs/activeId；actions 通过 getState 调用以避免多余渲染）
-  const tabs = useSessionsStore((s) => s.tabs)
-  const activeId = useSessionsStore((s) => s.activeId)
-  const chatSessionId = useChatStore((s) => s.sessionId)
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>('model')
 
   // 启动时拉取后端配置 + 同步已加载项目
   useEffect(() => {
     void configApi.get().then((c) => setModel(c.model)).catch(() => {})
+    void configApi.getAppearance().then(applyAppearanceConfig).catch(() => {})
     void projectApi
       .get()
       .then((p) => {
@@ -62,60 +57,46 @@ export default function App() {
       .catch(() => {})
   }, [])
 
-  // 同步 chat.sessionId → sessions.activeId
-  // 当后端创建新会话（首条消息后 SSE 'session' 事件）时，确保 sessions store 有对应标签
-  // 若当前 active 是 openNew 创建的占位符（tab_ 前缀），sessions store 会自动重绑定
   useEffect(() => {
-    if (chatSessionId) {
-      useSessionsStore.getState().setActiveId(chatSessionId)
+    let bindings: Record<string, string> = {}
+    const normalize = (event: KeyboardEvent) => {
+      const parts: string[] = []
+      if (event.ctrlKey) parts.push('Ctrl')
+      if (event.altKey) parts.push('Alt')
+      if (event.shiftKey) parts.push('Shift')
+      if (event.metaKey) parts.push('Meta')
+      const key = event.key === ' ' ? 'Space' : event.key
+      if (!['Control', 'Alt', 'Shift', 'Meta'].includes(key)) parts.push(key.length === 1 ? key.toUpperCase() : key)
+      return parts.join('+')
     }
-  }, [chatSessionId])
+    const onKeyDown = (event: KeyboardEvent) => {
+      const shortcut = normalize(event)
+      if (shortcut === bindings['new-session']) {
+        event.preventDefault()
+        handleNewSession()
+      } else if (shortcut === bindings['toggle-settings']) {
+        event.preventDefault()
+        setView((current) => current === 'settings' ? 'chat' : 'settings')
+      } else if (shortcut === bindings['stop-generation'] && useChatStore.getState().streaming) {
+        event.preventDefault()
+        void useChatStore.getState().stop()
+      }
+    }
+    void configApi.getShortcuts().then((config) => { bindings = config.bindings }).catch(() => {})
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
 
-  /* ============== SessionTabs 事件处理 ============== */
-
-  /** 切换会话标签：同步 sessions store + 加载后端历史 */
+  /** 切换会话：加载后端历史。会话入口保留在左侧「最近」列表。 */
   const handleSessionSwitch = (id: string) => {
-    useSessionsStore.getState().switchTo(id)
-    // 占位符标签（tab_ 前缀）无对应后端会话，跳过历史拉取
     if (!id.startsWith('tab_')) {
       void useChatStore.getState().switchSession(id).catch(() => {})
     }
   }
 
-  /** 关闭会话标签：若关闭的是 active，自动切到相邻标签并同步对话视图 */
-  const handleSessionClose = (id: string) => {
-    const wasActive = id === useSessionsStore.getState().activeId
-    useSessionsStore.getState().close(id)
-    if (wasActive) {
-      const nextActive = useSessionsStore.getState().activeId
-      if (nextActive && !nextActive.startsWith('tab_')) {
-        void useChatStore.getState().switchSession(nextActive).catch(() => {})
-      } else if (!nextActive) {
-        // 无标签剩余：清空对话视图
-        useChatStore.getState().clearView()
-      }
-    }
-  }
-
-  /** 新建会话标签：创建占位符标签 + 清空当前对话视图 */
+  /** 新建会话：清空当前对话视图，首次发送时由后端创建会话。 */
   const handleNewSession = () => {
-    useSessionsStore.getState().openNew()
     useChatStore.getState().clearView()
-  }
-
-  /** 置顶/取消置顶 */
-  const handleSessionPin = (id: string) => {
-    useSessionsStore.getState().pin(id)
-  }
-
-  /** 重命名标签 */
-  const handleSessionRename = (id: string, title: string) => {
-    useSessionsStore.getState().rename(id, title)
-  }
-
-  /** 拖拽排序：将 fromId 移动到 toId 之前的位置 */
-  const handleSessionMove = (fromId: string, toId: string) => {
-    useSessionsStore.getState().moveTab(fromId, toId)
   }
 
   return (
@@ -123,33 +104,26 @@ export default function App() {
       {/* === 顶部菜单栏（透明，Mica 穿透） === */}
       <TitleBar model={model} />
 
-      {/* === 会话标签栏（仅对话页显示，Mica 穿透） === */}
-      {view === 'chat' && (
-        <SessionTabs
-          tabs={tabs}
-          activeId={activeId}
-          onSwitch={handleSessionSwitch}
-          onClose={handleSessionClose}
-          onNew={handleNewSession}
-          onPin={handleSessionPin}
-          onRename={handleSessionRename}
-          onMove={handleSessionMove}
-        />
-      )}
-
       {/* === 主体：左侧窄导航（Mica 穿透） + 右侧工作区（不透明板块） === */}
       <div className="flex flex-1 min-h-0">
         {/* 左侧窄导航栏（透明，Mica 穿透） */}
-        <SideNav view={view} onViewChange={setView} />
+        <SideNav
+          view={view}
+          onViewChange={setView}
+          onNewSession={handleNewSession}
+          onSessionSelect={handleSessionSwitch}
+          settingsSection={settingsSection}
+          onSettingsSectionChange={setSettingsSection}
+        />
 
         {/* 右侧工作区（不透明圆角板块，与 SideNav 视觉分层） */}
-        <div className="flex-1 min-w-0 min-h-0 p-3 pl-0">
+        <div className="flex-1 min-w-0 min-h-0">
           <div className="work-surface h-full w-full">
             <div key={view} className="h-full w-full animate-page-transition">
               {view === 'chat' ? (
                 <WorkArea layout={layout} />
               ) : (
-                <SettingsPage />
+                <SettingsPage section={settingsSection} />
               )}
             </div>
           </div>

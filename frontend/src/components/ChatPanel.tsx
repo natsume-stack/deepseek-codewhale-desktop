@@ -106,6 +106,7 @@ export function ChatPanel({ onToggleLeft, onToggleRight, leftCollapsed, rightCol
   const setOverrides = useChatStore((s) => s.setOverrides)
 
   const pendingCount = useDiffStore((s) => s.diffs.filter((d) => d.status === 'pending').length)
+  const diffs = useDiffStore((s) => s.diffs)
   const registerDiff = useDiffStore((s) => s.register)
   const refreshDiff = useDiffStore((s) => s.refresh)
 
@@ -114,6 +115,7 @@ export function ChatPanel({ onToggleLeft, onToggleRight, leftCollapsed, rightCol
   const [slashCommand, setSlashCommand] = useState<string | null>(null)
   const [model, setModel] = useState('deepseek-chat')
   const [defaultEffort, setDefaultEffort] = useState('medium')
+  const [contextLimit, setContextLimit] = useState(32_768)
   const [skillListOpen, setSkillListOpen] = useState(false)
   const [mcpListOpen, setMcpListOpen] = useState(false)
   const scrollRef = useAutoScroll(messages)
@@ -127,6 +129,7 @@ export function ChatPanel({ onToggleLeft, onToggleRight, leftCollapsed, rightCol
     void configApi.get().then((c) => setModel(c.model)).catch(() => {})
     void paramsApi.get().then((p) => {
       setDefaultEffort(p.reasoningEffort)
+      setContextLimit(p.contextLength)
     }).catch(() => {})
     void projectApi.get().then((p: ProjectInfo) => {
       const name = p.path ? p.path.split(/[\\/]/).pop() : 'CodeWhale'
@@ -147,6 +150,20 @@ export function ChatPanel({ onToggleLeft, onToggleRight, leftCollapsed, rightCol
     const chars = messages.reduce((sum, m) => sum + (m.content?.length ?? 0) + (m.reasoning?.length ?? 0), 0)
     return Math.ceil(chars / 4)
   }, [messages])
+
+  const diffStats = useMemo(() => diffs.reduce((stats, diff) => {
+    const before = diff.originalContent?.split('\n').length ?? 0
+    const after = diff.modifiedContent.split('\n').length
+    stats.files += 1
+    if (after >= before) stats.added += after - before
+    else stats.removed += before - after
+    return stats
+  }, { files: 0, added: 0, removed: 0 }), [diffs])
+
+  const taskProgress = useMemo(() => ({
+    current: Math.max(1, messages.filter((message) => message.role === 'assistant').length),
+    total: Math.max(1, messages.filter((message) => message.role === 'assistant').length + 1),
+  }), [messages])
 
   const handleSend = useCallback((text?: string) => {
     const sendText = text ?? draft
@@ -334,6 +351,13 @@ export function ChatPanel({ onToggleLeft, onToggleRight, leftCollapsed, rightCol
           onSend={() => handleSend()}
           onStop={handleStop}
           streaming={streaming}
+          hasHistory={messages.length > 0}
+          taskProgress={taskProgress}
+          changedFiles={diffStats.files}
+          linesAdded={diffStats.added}
+          linesRemoved={diffStats.removed}
+          contextUsed={tokenEst}
+          contextLimit={contextLimit}
           modelDisplayName={currentModelProfile.displayName}
           effort={(overrideReasoningEffort ?? defaultEffort) as EffortLevel}
           projectName={projectName}
@@ -371,6 +395,13 @@ interface ChatInputBarProps {
   onSend: () => void
   onStop: () => void
   streaming: boolean
+  hasHistory: boolean
+  taskProgress: { current: number; total: number }
+  changedFiles: number
+  linesAdded: number
+  linesRemoved: number
+  contextUsed: number
+  contextLimit: number
   modelDisplayName: string
   effort: EffortLevel
   projectName: string
@@ -426,6 +457,13 @@ function ChatInputBar({
   onSend,
   onStop,
   streaming,
+  hasHistory,
+  taskProgress,
+  changedFiles,
+  linesAdded,
+  linesRemoved,
+  contextUsed,
+  contextLimit,
   modelDisplayName,
   effort,
   projectName,
@@ -458,6 +496,22 @@ function ChatInputBar({
   const [permOpen, setPermOpen] = useState(false)
   const [modelEffortOpen, setModelEffortOpen] = useState(false)
   const [effortPickerOpen, setEffortPickerOpen] = useState(false)
+  const [cacheHitRate, setCacheHitRate] = useState<number | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    const refresh = () => {
+      void configApi.getCacheStats().then((stats) => {
+        if (!cancelled) setCacheHitRate(stats.hitRate)
+      }).catch(() => {})
+    }
+    refresh()
+    const timer = window.setInterval(refresh, 10_000)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [])
 
   const addBtnRef = useRef<HTMLButtonElement>(null)
   const permBtnRef = useRef<HTMLButtonElement>(null)
@@ -595,26 +649,24 @@ function ChatInputBar({
   const modelPos = getPopoverPos(modelBtnRef)
 
   return (
-    <div ref={containerRef} className="relative rounded-3xl border border-white/8 bg-white/4 focus-within:border-white/15 transition-all duration-200 ease-out overflow-visible">
-      <div className="flex items-center gap-1 px-3 py-2 border-b border-white/5 min-h-[44px]">
-        <span className="context-tag inline-flex items-center gap-1.5">
-          <FolderIcon />
-          <span className="truncate max-w-[120px]">{projectName}</span>
-        </span>
-        <span className="context-tag inline-flex items-center gap-1.5">
-          <MonitorIcon />
-          <span>本地</span>
-        </span>
-        <span className="context-tag inline-flex items-center gap-1.5">
-          <GitBranchIcon />
-          <span>{gitBranch}</span>
-        </span>
-        <div className="ml-auto">
-          <button className="w-7 h-7 rounded-full hover:bg-white/8 flex items-center justify-center text-text-tertiary transition-colors">
-            <ChevronUpIcon />
-          </button>
+    <div className={`relative ${(streaming || !hasHistory) ? 'pt-10' : ''}`}>
+      {streaming ? (
+        <div className="absolute top-0 left-1/2 z-20 flex h-12 w-fit max-w-[88%] -translate-x-1/2 items-center gap-3 rounded-[23px] border border-white/10 bg-[#232325] px-5 text-sm shadow-raised">
+          <span className="h-3 w-3 flex-shrink-0 rounded-full border-2 border-accent border-t-transparent animate-spin" />
+          <span className="text-text-secondary whitespace-nowrap">第 {taskProgress.current} / {taskProgress.total} 步</span>
+          <span className="max-w-[180px] truncate text-text-tertiary">{changedFiles > 0 ? `${changedFiles} 个文件已变更` : '正在执行任务'}</span>
+          <span className="text-emerald-400">+{linesAdded}</span>
+          <span className="text-rose-400">-{linesRemoved}</span>
         </div>
+      ) : !hasHistory ? (
+      <div className="absolute top-0 left-1/2 z-0 flex h-12 w-[88%] max-w-[720px] -translate-x-1/2 items-center justify-start gap-5 rounded-t-[23px] border border-white/8 border-b-0 bg-[#151516] px-6 pb-1 text-xs text-text-tertiary">
+        <span className="inline-flex min-w-0 items-center gap-1.5 truncate"><FolderIcon /><span className="max-w-[180px] truncate">{projectName}</span></span>
+        <span className="inline-flex flex-shrink-0 items-center gap-1.5"><MonitorIcon /><span>本地</span></span>
+        <span className="inline-flex min-w-0 items-center gap-1.5 truncate"><GitBranchIcon /><span className="max-w-[150px] truncate">{gitBranch}</span></span>
       </div>
+      ) : null}
+
+      <div ref={containerRef} className="relative z-10 rounded-3xl border border-white/8 bg-surface-elevated focus-within:border-white/15 transition-all duration-200 ease-out overflow-visible">
 
       {(attachments.length > 0 || slashCommand) && (
         <div className="flex flex-wrap items-center gap-1.5 px-4 pt-2 pb-1 border-b border-white/5">
@@ -675,6 +727,10 @@ function ChatInputBar({
           >
             <PlusIcon />
           </button>
+          <span className="text-2xs text-text-tertiary tabular-nums" title="缓存命中率">
+            缓存 {cacheHitRate === null ? '—' : `${(cacheHitRate * 100).toFixed(1)}%`}
+          </span>
+          <ContextMeter used={contextUsed} limit={contextLimit} />
           <button
             ref={permBtnRef}
             onClick={() => setPermOpen(!permOpen)}
@@ -849,6 +905,7 @@ function ChatInputBar({
         onClose={handlePickerClose}
         position={pickerPosition}
       />
+      </div>
     </div>
   )
 }
@@ -880,6 +937,19 @@ function MenuItem({
       </div>
       {trailing && <span className="flex-shrink-0">{trailing}</span>}
     </button>
+  )
+}
+
+function ContextMeter({ used, limit }: { used: number; limit: number }) {
+  const ratio = limit === 0 ? 1 : Math.min(1, used / limit)
+  const label = limit >= 1_000_000 ? '1M' : limit >= 1_000 ? `${Math.round(limit / 1_000)}K` : String(limit)
+  return (
+    <span className="hidden min-[880px]:inline-flex items-center gap-1.5 text-2xs text-text-tertiary" title={`上下文 ${used.toLocaleString()} / ${limit.toLocaleString()} tokens`}>
+      <span>上下文 {used >= 1_000 ? `${Math.round(used / 1_000)}K` : used}/{label}</span>
+      <span className="h-1.5 w-12 overflow-hidden rounded-full bg-white/10">
+        <span className="block h-full bg-white/60 transition-all" style={{ width: `${ratio * 100}%` }} />
+      </span>
+    </span>
   )
 }
 
@@ -922,20 +992,20 @@ function EmptyState({ projectName, onQuickAction }: { projectName: string; onQui
   ]
 
   return (
-    <div className="flex flex-col items-center justify-center h-full text-center px-6 py-10">
+    <div className="flex flex-col items-center justify-center h-full text-center px-6 py-8">
       <TerminalLogoIcon />
-      <h1 className="text-[38px] font-bold text-text-primary mt-6 tracking-tight leading-tight">
+      <h1 className="text-[30px] font-semibold text-text-primary mt-5 leading-tight">
         我们在 <span className="border-b border-dashed border-text-tertiary pb-1">{projectName}</span> 中构建什么？
       </h1>
-      <div className="grid grid-cols-4 gap-3 mt-8 max-w-5xl w-full">
+      <div className="grid grid-cols-2 gap-2 mt-6 max-w-2xl w-full">
         {quickActions.map((action, i) => (
           <button
             key={i}
             onClick={() => onQuickAction(action.prompt)}
-            className="rounded-2xl border border-white/8 bg-white/3 hover:bg-white/8 hover:border-white/15 hover:scale-[1.02] transition-all duration-200 ease-out cursor-pointer p-5 text-left min-h-[140px] flex flex-col group"
+            className="rounded-lg border border-white/8 bg-white/3 hover:bg-white/8 hover:border-white/15 transition-colors duration-150 ease-out cursor-pointer px-4 py-3 text-left min-h-[96px] flex flex-col group"
           >
             <span className="text-2xl mb-auto" style={{ color: action.color }}>{action.icon}</span>
-            <div className="text-base font-semibold text-text-primary mt-3">{action.label}</div>
+            <div className="text-sm font-medium text-text-primary mt-2">{action.label}</div>
           </button>
         ))}
       </div>
@@ -1028,14 +1098,6 @@ function GitBranchIcon() {
       <circle cx="18" cy="6" r="3" />
       <circle cx="6" cy="18" r="3" />
       <path d="M18 9a9 9 0 0 1-9 9" />
-    </svg>
-  )
-}
-
-function ChevronUpIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="18 15 12 9 6 15" />
     </svg>
   )
 }

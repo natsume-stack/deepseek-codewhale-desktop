@@ -135,6 +135,44 @@ fn base64_encode(input: &[u8]) -> String {
     out
 }
 
+/// Decode the locally stored base64 profile key. Profile activation needs the
+/// original credential to update the request client's effective configuration.
+fn base64_decode(input: &str) -> Result<Vec<u8>, AppError> {
+    let mut output = Vec::with_capacity(input.len() / 4 * 3);
+    let mut chunk = [0u8; 4];
+    let mut count = 0usize;
+    for byte in input.bytes().filter(|b| !b.is_ascii_whitespace()) {
+        let value = match byte {
+            b'A'..=b'Z' => byte - b'A',
+            b'a'..=b'z' => byte - b'a' + 26,
+            b'0'..=b'9' => byte - b'0' + 52,
+            b'+' => 62,
+            b'/' => 63,
+            b'=' => 64,
+            _ => return Err(AppError::BadRequest("API 密钥编码无效".into())),
+        };
+        chunk[count] = value;
+        count += 1;
+        if count == 4 {
+            if chunk[0] == 64 || chunk[1] == 64 {
+                return Err(AppError::BadRequest("API 密钥编码无效".into()));
+            }
+            output.push((chunk[0] << 2) | (chunk[1] >> 4));
+            if chunk[2] != 64 {
+                output.push((chunk[1] << 4) | (chunk[2] >> 2));
+            }
+            if chunk[3] != 64 {
+                output.push((chunk[2] << 6) | chunk[3]);
+            }
+            count = 0;
+        }
+    }
+    if count != 0 {
+        return Err(AppError::BadRequest("API 密钥编码无效".into()));
+    }
+    Ok(output)
+}
+
 /// 处理明文 API key：生成脱敏版本 + 加密版本（base64）。
 /// 输入 `api_key_masked` 字段携带明文 key（来自前端），返回 (masked, encrypted)。
 fn process_plain_key(plain: &str) -> (String, Option<String>) {
@@ -280,11 +318,23 @@ pub async fn set_active_profile(
     Path(id): Path<String>,
 ) -> Result<Json<Value>, AppError> {
     let mut cfg = state.config.write().await;
-    let exists = cfg.model_profiles.profiles.iter().any(|p| p.id == id);
-    if !exists {
-        return Err(AppError::BadRequest(format!("profile 不存在: {id}")));
-    }
+    let profile = cfg
+        .model_profiles
+        .profiles
+        .iter()
+        .find(|p| p.id == id)
+        .cloned()
+        .ok_or_else(|| AppError::BadRequest(format!("profile 不存在: {id}")))?;
+    let encrypted_key = profile
+        .api_key_encrypted
+        .as_deref()
+        .ok_or_else(|| AppError::BadRequest("该模型档案没有可用 API 密钥，请先编辑并保存密钥".into()))?;
+    let api_key = String::from_utf8(base64_decode(encrypted_key)?)
+        .map_err(|_| AppError::BadRequest("API 密钥编码无效".into()))?;
     cfg.model_profiles.active_profile_id = Some(id.clone());
+    cfg.deepseek.api_key = api_key;
+    cfg.deepseek.base_url = profile.base_url;
+    cfg.deepseek.model = profile.model;
     cfg.save()?;
     drop(cfg);
     Ok(Json(json!({ "ok": true, "activeProfileId": id })))
@@ -379,18 +429,12 @@ pub struct ClearMemoryBody {
 
 /// POST /api/config/cache/clear-memory → 清空第二层项目持久记忆。
 ///
-/// 注意: 受 cache.rs 字节稳定约束，init_project_memory 仅在 memory 为空时生效，
-/// 此处调用 init_project_memory("") 用于未初始化会话或作为占位实现，
-/// 已有记忆的会话需通过 reset_session 重置缓存。
 pub async fn clear_project_memory(
     State(state): State<SharedState>,
     Json(body): Json<ClearMemoryBody>,
 ) -> Result<Json<Value>, AppError> {
-    state
-        .sessions
-        .init_project_memory(&body.session_id, String::new())
-        .await?;
-    tracing::info!("已处理项目记忆清空请求: {}", body.session_id);
+    state.sessions.clear_project_memory(&body.session_id).await?;
+    tracing::info!("已清空项目记忆: {}", body.session_id);
     Ok(Json(json!({ "ok": true, "sessionId": body.session_id })))
 }
 
@@ -478,11 +522,11 @@ pub async fn export_audit_log(State(state): State<SharedState>) -> Result<Json<V
         if !p.trim().is_empty() {
             if let Ok(text) = std::fs::read_to_string(&p) {
                 let lines: Vec<&str> = text.lines().collect();
-                return Ok(Json(json!({ "entries": lines, "count": lines.len() })));
+                return Ok(Json(json!({ "log": text, "entries": lines, "count": lines.len() })));
             }
         }
     }
-    Ok(Json(json!({ "entries": [], "count": 0 })))
+    Ok(Json(json!({ "log": "", "entries": [], "count": 0 })))
 }
 
 /* ============================================================
