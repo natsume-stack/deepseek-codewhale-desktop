@@ -229,7 +229,11 @@ pub async fn list_mcp_services(State(state): State<SharedState>) -> Json<Value> 
     use std::collections::HashMap as StdHashMap;
     let mut status_map: StdHashMap<String, String> = StdHashMap::new();
     for s in &statuses {
-        let st = if s.connected { "connected" } else { "disconnected" };
+        let st = if s.connected {
+            "connected"
+        } else {
+            "disconnected"
+        };
         if s.last_error.is_some() {
             status_map.insert(s.id.clone(), "error".into());
         } else {
@@ -283,7 +287,11 @@ pub async fn add_mcp_service(
         )));
     }
     let id = format!("svc_{}", chrono::Utc::now().timestamp_millis());
-    let permission_scope = body.permissions.first().cloned().unwrap_or_else(|| "network".into());
+    let permission_scope = body
+        .permissions
+        .first()
+        .cloned()
+        .unwrap_or_else(|| "network".into());
     let (command, args, url) = match body.transport.as_str() {
         "stdio" => {
             // endpoint 按空格切分：第一段为 command，其余为 args

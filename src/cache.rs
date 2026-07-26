@@ -11,8 +11,8 @@
 
 use crate::error::{AppError, AppResult};
 use serde::Serialize;
-use std::collections::HashMap;
 use std::collections::hash_map::DefaultHasher;
+use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -46,10 +46,18 @@ pub struct CacheMessage {
 
 impl CacheMessage {
     pub fn user(content: impl Into<String>) -> Self {
-        Self { role: "user".into(), content: content.into(), reasoning: None }
+        Self {
+            role: "user".into(),
+            content: content.into(),
+            reasoning: None,
+        }
     }
     pub fn assistant(content: impl Into<String>) -> Self {
-        Self { role: "assistant".into(), content: content.into(), reasoning: None }
+        Self {
+            role: "assistant".into(),
+            content: content.into(),
+            reasoning: None,
+        }
     }
 }
 
@@ -128,7 +136,11 @@ impl PrefixCache {
         if self.mounted_files.iter().any(|f| f.path == path) {
             return Ok(());
         }
-        self.mounted_files.push(MountedFile { path, content, bytes });
+        self.mounted_files.push(MountedFile {
+            path,
+            content,
+            bytes,
+        });
         self.recompute_fingerprint();
         Ok(())
     }
@@ -310,7 +322,10 @@ impl CacheStore {
     }
 
     pub async fn save(&self, cache: PrefixCache) {
-        self.inner.lock().await.insert(cache.session_id.clone(), cache);
+        self.inner
+            .lock()
+            .await
+            .insert(cache.session_id.clone(), cache);
     }
 
     pub async fn remove(&self, session_id: &str) {

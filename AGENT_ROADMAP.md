@@ -439,3 +439,145 @@ Agent 输出的代码块**必须头部标注完整文件路径**（` ```lang:pat
 6. **P0-6**：`@` 唤起文件选择，挂载后对话顶部显示 chip，发送时上下文含文件内容。
 7. **P0-7**：复杂需求输出 `<todo>` 块后，代办 Tab 自动出现任务，可勾选。
 8. **P0-8**：Agent 发起写操作时弹出审批弹窗，ReadOnly 模式下所有写被拒，审计日志可查。
+
+---
+
+## 八、自治 Agent 运行时(Phase X,2026 增量)
+
+> 在原有 P0/P1/P2 增量功能之上,新增**自治 Agent 运行时层**,作为外挂中间调度层接入现有 deepseektui LLM 内核,实现 OpenAI Codex / Claude Code 级别的桌面端自治代码智能体。本层与原 P0/P1/P2 互不冲突,优先保障**全自动自治模式**稳定运行。
+
+### 8.1 设计原则(最高优先级)
+1. **保留 deepseektui 原有内核不重构**: 所有 Agent 能力封装为独立中间调度层 `src/agent/`,外挂接入现有 LLM 交互通道(`DeepSeekClient`/`SessionManager`)
+2. **架构分层清晰**: 桌面 UI 层 ←→ 自治 Agent 运行时层 ←→ deepseektui LLM 内核层
+3. **双模式自由切换**: 人工逐步骤审批模式(次要) / 全自动自治模式(本次重点)
+4. **增量迭代**: 适配单人独立开发,模块化拆分,避免大规模一次性重构
+5. **LLM 解耦**: Agent 运行时默认适配 DeepSeek 模型,通过 `AgentTool` trait + `AgentRuntime` 抽象预留扩展接口
+
+### 8.2 参考标杆与选型
+| 项目 | 借鉴点 | 采纳方式 |
+|------|--------|---------|
+| OpenHands | 长周期自治、自省、状态持久化、失败重试 | ReAct 引擎 + TaskStore + SelfReflection 直接借鉴其 AgentController 状态机思想 |
+| Aider | Diff 变更管理、多文件批量编辑、Git 集成 | 项目已有 DiffRegistry + Hunk 级管理,扩展为 ChangeManager 接入 ReAct 输出 |
+| Cline | 标准化工具协议、MCP 兼容规范 | 定义 AgentTool trait,工具参数走 JSON Schema,与现有 McpStore 共用调用接口 |
+| SWE-Agent | Bug 复现、自动测试校验、自修复闭环 | SelfReflection 模块实现「执行→测试→解析报错→生成修复 Diff」循环 |
+| OpenCode | 桌面会话持久化、断点续跑、前后端状态同步 | TaskStore 采用 JSON 文件 + 索引设计,断点续跑接口借鉴其 SessionResume 范式 |
+
+### 8.3 分层架构
+```
+桌面 UI 层 (React + Zustand)
+  ├─ TaskMonitorPanel (自治任务监控面板)
+  ├─ ReActTimeline (ReAct 步骤流可视化)
+  ├─ ModeSwitcher (自动/审批模式切换)
+  └─ ResumeControl (断点续跑控制)
+       │ REST + SSE
+       ▼
+Agent 运行时层 (Rust, src/agent/, 本次开发重点)
+  ├─ ReAct 引擎 (react_engine.rs): Planner + ToolDispatcher + StateMachine + Terminator
+  ├─ SelfReflection (self_reflection.rs): 执行后测试→解析报错→生成修复
+  ├─ TaskStore (task_store.rs): JSON 文件持久化 + 断点续跑
+  ├─ ToolProtocol (tool_protocol.rs): AgentTool trait + JSON Schema
+  │   ├─ FileTools (read/write/list/search/delete)
+  │   ├─ ShellTools (exec/timeout/blacklist)
+  │   ├─ GitTools (status/diff/commit/branch/log)
+  │   └─ McpBridge (桥接现有 12 个 MCP 插件)
+  ├─ ChangeManager (change_manager.rs): Diff/回滚/快照
+  ├─ SandboxGuard (sandbox_guard.rs): 黑白名单/沙箱/危险告警
+  └─ ModeRouter (mode_router.rs): 自动 vs 审批路由
+       │ 复用现有 SSE 通道(不重构)
+       ▼
+deepseektui LLM 内核层 (Rust, 保留不重构)
+  DeepSeekClient / SessionManager / DSML / PrefixCache / ToolRepair / SmartRouter
+       │ HTTPS
+       ▼
+  api.deepseek.com
+```
+
+### 8.4 任务状态机
+```
+Pending → Planning → Acting ↔ Observing ↔ Reflecting
+                                       │
+                                       ├─→ Completed (任务成功)
+                                       ├─→ Failed (穷尽重试)
+                                       ├─→ Paused (用户暂停) → 续跑 → Acting
+                                       ├─→ AwaitingApproval (审批模式) → 继续 → Acting
+                                       └─→ Cancelled (用户取消)
+```
+- **防死循环**: `current_iteration >= max_iterations`(默认 25)强制 Failed
+- **取消机制**: 每个任务持 `CancellationToken`,可被外部停止
+- **断点续跑**: 每次迭代结束写 `Checkpoint { iteration, step_index, saved_at }`,恢复时从 checkpoint 继续
+
+### 8.5 工具调用协议
+```rust
+#[async_trait]
+pub trait AgentTool: Send + Sync {
+    fn name(&self) -> &'static str;          // "file.read"
+    fn description(&self) -> &'static str;
+    fn schema(&self) -> serde_json::Value;   // JSON Schema 参数定义
+    fn required_permission(&self) -> PermissionLevel;
+    async fn execute(&self, args: Value, ctx: &ExecutionContext) -> Result<ToolResult, ToolError>;
+}
+```
+所有工具调用走 `ToolDispatcher`,在执行前:
+1. **权限校验**: 工具声明的 `required_permission` ≤ 当前会话 `PermissionLevel`
+2. **路径沙箱**: `config::ensure_within(project_root, path)` 防越界
+3. **危险操作**: `SandboxGuard` 检查命令黑名单(`rm -rf /`、`format`、`:(){:|:&};:` 等)
+4. **审批(可选)**: `ModeRouter` 决定是否走 `ApprovalStore` 等待用户决策
+
+### 8.6 开发阶段(本次新增,与原 P0/P1/P2 并行)
+| 阶段 | 范围 | 优先级 |
+|------|------|--------|
+| **Phase 1** | 状态机 + TaskStore + AgentTool trait + 文件/Shell/Git 工具适配 + 最小 ReAct 循环 + 前端任务监控面板 | P0 |
+| **Phase 2** | Planner 任务规划 + SelfReflection 自省 + ChangeManager 接入 + SandboxGuard 完整黑白名单 | P0 |
+| **Phase 3** | 任务断点续跑完整链路 + 危险操作告警 UI + 任务历史/导出 | P1 |
+| **Phase 4** | MCP 桥接(复用 12 个内置插件) + 工具协议开放接口 + 审批模式接入(次要) | P1 |
+
+### 8.7 REST API 端点(新增)
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | /api/agent/tasks | 创建任务 |
+| GET | /api/agent/tasks | 列出任务(可选 session_id 过滤) |
+| GET | /api/agent/tasks/:id | 任务详情(含 history) |
+| POST | /api/agent/tasks/:id/start | 启动执行 |
+| POST | /api/agent/tasks/:id/pause | 暂停 |
+| POST | /api/agent/tasks/:id/resume | 断点续跑 |
+| POST | /api/agent/tasks/:id/stop | 终止 |
+| GET | /api/agent/tasks/:id/stream | SSE 任务事件流 |
+| GET | /api/agent/tools | 列出可用工具 |
+| GET/PUT | /api/agent/mode | 全局默认模式 |
+
+### 8.8 SSE 事件协议
+```
+event: task_state      data: {"state":"acting","iteration":3}
+event: thought         data: {"content":"需要先读取 src/main.rs"}
+event: tool_call       data: {"id":"...","tool_name":"file.read","arguments":{...}}
+event: tool_result     data: {"success":true,"output":"...","artifacts":[]}
+event: reflection      data: {"conclusion":"继续","next_action":"..."}
+event: plan_created    data: {"steps":["...","..."]}
+event: task_complete   data: {"summary":"..."}
+event: task_error      data: {"error":"...","recoverable":true}
+event: log             data: {"level":"info","message":"..."}
+```
+
+### 8.9 自治模式核心约束(用户级硬性要求)
+1. Agent 具备**自主连续执行多轮工具调用**能力,不会单次动作后主动中断
+2. 遇到报错**自动尝试排查修复**,直到任务达成或判定无法解决再向用户汇报
+3. 每轮迭代自动写 checkpoint,支持任意时刻暂停/续跑
+4. 全程通过 SSE 推送事件,前端可实时观察 ReAct 推理链
+5. 终止条件: ① LLM 主动判定 `terminate=true`;② 迭代上限;③ 用户主动停止;④ 不可恢复错误
+
+### 8.10 验收标准(Phase 1)
+1. 创建任务 → 启动 → 5 秒内 SSE 推送首个 `task_state` 事件
+2. ReAct 循环连续执行至少 3 轮工具调用,不主动中断
+3. 工具调用错误(如文件不存在)能被捕获为 observation,继续下一轮
+4. 暂停 → 续跑,从 checkpoint 继续执行
+5. 前端 TaskMonitorPanel 实时显示迭代步骤与工具调用
+6. 迭代上限(25)触发后任务状态变为 Failed
+
+### 8.11 风险与缓解
+| 风险 | 影响 | 缓解 |
+|------|------|------|
+| DeepSeek API 429 限流 | 自治循环频繁调用导致请求被拒 | 内置指数退避 + 最大 5 次重试,429 后暂停 60 秒 |
+| LLM 输出 JSON 格式不规范 | 决策解析失败 | 复用现有 `tool_repair.rs` 自动修复 + 兜底正则提取 |
+| 工具调用死循环 | 同一错误反复重试 | max_iterations 硬上限 + 反思阶段检测「重复动作」模式 |
+| 全自动误操作破坏文件 | 用户损失 | ChangeManager 自动快照 + Diff 注册 + 一键回滚 + 审计日志 |
+| 长任务断电/崩溃 | 任务状态丢失 | TaskStore 每次状态变更持久化到 JSON 文件,启动时 `load_from_disk` 恢复 |

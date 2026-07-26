@@ -61,9 +61,31 @@ pub fn route(message: &str, _context: &str) -> RouteDecision {
     let lower = message.to_lowercase();
 
     // 关键词分组
-    let light_kw = ["解释", "说明", "是什么", "什么是", "查询", "查看", "列出", "简介", "看下", "看一下"];
-    let heavy_kw = ["重构", "实现", "添加", "修复", "新建", "迁移", "改造", "优化", "调整"];
-    let mega_kw = ["架构设计", "完整实现", "全部", "完整", "所有", "端到端", "整体", "全套"];
+    let light_kw = [
+        "解释",
+        "说明",
+        "是什么",
+        "什么是",
+        "查询",
+        "查看",
+        "列出",
+        "简介",
+        "看下",
+        "看一下",
+    ];
+    let heavy_kw = [
+        "重构", "实现", "添加", "修复", "新建", "迁移", "改造", "优化", "调整",
+    ];
+    let mega_kw = [
+        "架构设计",
+        "完整实现",
+        "全部",
+        "完整",
+        "所有",
+        "端到端",
+        "整体",
+        "全套",
+    ];
     let multi_file_kw = ["多文件", "多个文件", "跨文件", "批量"];
     let multi_step_kw = ["分步", "步骤", "多步", "先", "再", "然后", "最后"];
 
@@ -81,19 +103,20 @@ pub fn route(message: &str, _context: &str) -> RouteDecision {
         || lower.contains("完整");
 
     // 复杂度决策：Mega 优先，其次 Heavy，最后 Light
-    let (complexity, concurrency) = if has_mega || (needs_todo_split && has_multi_step && has_multi_file) {
-        (Complexity::Mega, 3u32)
-    } else if has_heavy && (has_multi_file || has_multi_step || needs_todo_split) {
-        (Complexity::Heavy, 1u32)
-    } else if has_heavy {
-        // 单文件改造类需求
-        (Complexity::Heavy, 1u32)
-    } else if has_light {
-        (Complexity::Light, 1u32)
-    } else {
-        // 兜底：默认 Light（V4-Flash 处理简单需求最经济）
-        (Complexity::Light, 1u32)
-    };
+    let (complexity, concurrency) =
+        if has_mega || (needs_todo_split && has_multi_step && has_multi_file) {
+            (Complexity::Mega, 3u32)
+        } else if has_heavy && (has_multi_file || has_multi_step || needs_todo_split) {
+            (Complexity::Heavy, 1u32)
+        } else if has_heavy {
+            // 单文件改造类需求
+            (Complexity::Heavy, 1u32)
+        } else if has_light {
+            (Complexity::Light, 1u32)
+        } else {
+            // 兜底：默认 Light（V4-Flash 处理简单需求最经济）
+            (Complexity::Light, 1u32)
+        };
 
     let recommended_model = match complexity {
         Complexity::Light => "flash".to_string(),
@@ -194,7 +217,10 @@ mod tests {
 
     #[test]
     fn mega_full_implementation_routes_to_pro_with_concurrency() {
-        let d = route("完整实现用户系统，包含注册登录权限，分步骤先做后端再做前端", "");
+        let d = route(
+            "完整实现用户系统，包含注册登录权限，分步骤先做后端再做前端",
+            "",
+        );
         assert_eq!(d.complexity, Complexity::Mega);
         assert_eq!(d.recommended_model, "pro");
         assert_eq!(d.concurrency, 3);

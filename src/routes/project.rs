@@ -42,7 +42,12 @@ pub async fn load_project(
             "# 当前工作目录\n项目根: {}\n（请基于此项目根路径解析相对路径）",
             canonical.display()
         );
-        if state.sessions.init_project_memory(&s.id, memory).await.is_ok() {
+        if state
+            .sessions
+            .init_project_memory(&s.id, memory)
+            .await
+            .is_ok()
+        {
             init_count += 1;
         }
     }

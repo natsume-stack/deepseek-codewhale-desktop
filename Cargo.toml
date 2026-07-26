@@ -40,6 +40,13 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow = "1"
 thiserror = "1"
 
+# Agent runtime (P0 自治 Agent 后端基座)
+async-trait = "0.1"
+parking_lot = "0.12"
+
+[dev-dependencies]
+tempfile = "3"
+
 [profile.release]
 opt-level = 3
 lto = "thin"

@@ -34,23 +34,36 @@ pub struct SharedState {
     pub mcp_high_risk_enabled: Arc<RwLock<bool>>,
     /// Skill 默认权限等级（P2 设置页）：ReadOnly / WorkspaceWrite / FullAccess / ask。
     pub skills_default_permission: Arc<RwLock<String>>,
+    /// 自治 Agent 运行时 (P0): ReAct 引擎 + 任务存储 + 工具协议 + 事件流。
+    pub agent: Arc<crate::agent::react_engine::AgentRuntime>,
 }
 
 impl SharedState {
     pub fn new(config: AppConfig) -> Self {
+        let deepseek_cfg = config.deepseek.clone();
+        let client = DeepSeekClient::new();
+        let approvals = ApprovalStore::new();
+        // 初始化 Agent 运行时 (内置工具的注册推迟到 main.rs 中 await 调用)
+        let agent = Arc::new(crate::agent::react_engine::AgentRuntime::new(
+            Arc::new(client.clone()),
+            None,
+            deepseek_cfg,
+            approvals.clone(),
+        ));
         Self {
             config: Arc::new(RwLock::new(config)),
             sessions: SessionManager::new(),
-            client: DeepSeekClient::new(),
+            client,
             project_root: Arc::new(RwLock::new(None)),
             diffs: Arc::new(RwLock::new(HashMap::new())),
             todos: TodoStore::new(),
-            approvals: ApprovalStore::new(),
+            approvals,
             caches: CacheStore::new(),
             skills: crate::skills::SkillStore::new(),
             mcp: crate::mcp::McpStore::new(),
             mcp_high_risk_enabled: Arc::new(RwLock::new(false)),
             skills_default_permission: Arc::new(RwLock::new("WorkspaceWrite".into())),
+            agent,
         }
     }
 
@@ -116,7 +129,12 @@ impl TodoStore {
     }
 
     /// 新增代办任务，返回创建后的条目。
-    pub async fn add(&self, session_id: Option<String>, text: String, source: Option<String>) -> TodoItem {
+    pub async fn add(
+        &self,
+        session_id: Option<String>,
+        text: String,
+        source: Option<String>,
+    ) -> TodoItem {
         // P0 修复：使用 UUID 替代毫秒时间戳，避免批量添加时 ID 碰撞
         let id = format!("todo_{}", uuid::Uuid::new_v4());
         let now = Utc::now();
@@ -243,9 +261,7 @@ pub enum PendingAction {
         content: String,
     },
     /// 执行 Git 命令（如 commit / branch create / branch delete）。
-    GitExec {
-        args: Vec<String>,
-    },
+    GitExec { args: Vec<String> },
     /// 执行 Shell 命令（沙箱）。
     ShellExec {
         program: String,
@@ -273,7 +289,8 @@ impl ApprovalStore {
         detail: Option<String>,
         session_id: Option<String>,
     ) -> ApprovalRequest {
-        self.create_with_action(kind, description, detail, session_id, None).await
+        self.create_with_action(kind, description, detail, session_id, None)
+            .await
     }
 
     /// 创建带待执行动作的审批请求（审批通过后由 decide_approval 回放）。
@@ -326,7 +343,11 @@ impl ApprovalStore {
     /// 作出审批决定（批准/拒绝）。返回 (审批条目, 待执行动作)。
     /// 待执行动作仅在 approved=true 且原请求含 pending_action 时返回 Some，
     /// 由调用方负责回放执行。
-    pub async fn decide(&self, id: &str, approved: bool) -> Option<(ApprovalRequest, Option<PendingAction>)> {
+    pub async fn decide(
+        &self,
+        id: &str,
+        approved: bool,
+    ) -> Option<(ApprovalRequest, Option<PendingAction>)> {
         let mut map = self.inner.lock().await;
         let req = map.get_mut(id)?;
         req.status = if approved {

@@ -200,11 +200,7 @@ pub async fn git_commit(
     // 构造回放命令序列：先 add（如需），再 commit
     // 由于 tools::git 单次只执行一条 git 命令，PendingAction::GitExec 设计为单条命令，
     // 这里仅保存 commit 命令；add_all 的预 stage 由用户手动执行或后续扩展为多命令队列
-    let commit_only_args: Vec<String> = vec![
-        "commit".into(),
-        "-m".into(),
-        message.clone(),
-    ];
+    let commit_only_args: Vec<String> = vec!["commit".into(), "-m".into(), message.clone()];
 
     let approval = state
         .approvals
@@ -276,35 +272,46 @@ fn generate_conventional_commit(diff_stat: &str, seed: &str) -> String {
                 || f.ends_with(".test.tsx")
         });
     let only_config = !files.is_empty()
-        && files
-            .iter()
-            .all(|f| matches!(f, &"Cargo.toml" | &"package.json" | &"tsconfig.json" | &".gitignore" | &"Dockerfile" | &"build.rs" | &"Cargo.lock"));
+        && files.iter().all(|f| {
+            matches!(
+                f,
+                &"Cargo.toml"
+                    | &"package.json"
+                    | &"tsconfig.json"
+                    | &".gitignore"
+                    | &"Dockerfile"
+                    | &"build.rs"
+                    | &"Cargo.lock"
+            )
+        });
 
-    let kind = if lower_seed.contains("fix") || lower_seed.contains("修复") || lower_seed.contains("bug") {
-        "fix"
-    } else if lower_seed.contains("feat")
-        || lower_seed.contains("新增")
-        || lower_seed.contains("添加")
-        || lower_seed.contains("支持")
-    {
-        "feat"
-    } else if only_md {
-        "docs"
-    } else if only_test {
-        "test"
-    } else if lower_seed.contains("重构") || lower_seed.contains("refactor") {
-        "refactor"
-    } else if lower_seed.contains("perf") || lower_seed.contains("性能") {
-        "perf"
-    } else if lower_seed.contains("style") || lower_seed.contains("格式") {
-        "style"
-    } else if lower_seed.contains("ci") {
-        "ci"
-    } else if only_config {
-        "chore"
-    } else {
-        "chore"
-    };
+    let kind =
+        if lower_seed.contains("fix") || lower_seed.contains("修复") || lower_seed.contains("bug")
+        {
+            "fix"
+        } else if lower_seed.contains("feat")
+            || lower_seed.contains("新增")
+            || lower_seed.contains("添加")
+            || lower_seed.contains("支持")
+        {
+            "feat"
+        } else if only_md {
+            "docs"
+        } else if only_test {
+            "test"
+        } else if lower_seed.contains("重构") || lower_seed.contains("refactor") {
+            "refactor"
+        } else if lower_seed.contains("perf") || lower_seed.contains("性能") {
+            "perf"
+        } else if lower_seed.contains("style") || lower_seed.contains("格式") {
+            "style"
+        } else if lower_seed.contains("ci") {
+            "ci"
+        } else if only_config {
+            "chore"
+        } else {
+            "chore"
+        };
 
     let scope = guess_scope(&files);
     let summary = if seed.trim().is_empty() {
@@ -328,7 +335,10 @@ fn guess_scope(files: &[&str]) -> Option<String> {
     let parts: Vec<&str> = first.split('/').collect();
     if parts.len() >= 2 {
         let candidate = parts[0];
-        if !matches!(candidate, "src" | "tests" | "examples" | "." | ".." | "benches") {
+        if !matches!(
+            candidate,
+            "src" | "tests" | "examples" | "." | ".." | "benches"
+        ) {
             return Some(candidate.to_string());
         }
         if parts.len() >= 3 {
@@ -373,9 +383,7 @@ pub async fn git_branch(
     let needs_approval = matches!(action.as_str(), "delete" | "create");
     if needs_approval {
         if name.is_empty() {
-            return Err(AppError::BadRequest(format!(
-                "{action} 操作必须提供 name"
-            )));
+            return Err(AppError::BadRequest(format!("{action} 操作必须提供 name")));
         }
         let desc = format!("Git {} 分支: {}", action, name);
         let approval = state
@@ -457,9 +465,7 @@ pub async fn git_pr_review(
 
     let diff = fetch_pr_diff(&root, body.pr_number, body.repo.as_deref(), cfg.level)
         .await
-        .map_err(|e| {
-            AppError::Tool(format!("获取 PR #{} diff 失败: {e}", body.pr_number))
-        })?;
+        .map_err(|e| AppError::Tool(format!("获取 PR #{} diff 失败: {e}", body.pr_number)))?;
 
     if diff.trim().is_empty() {
         return Ok(Json(json!({
@@ -518,7 +524,7 @@ async fn deepseek_pr_review(
     pr_number: u32,
 ) -> Result<String, AppError> {
     use crate::config::ReasoningEffort;
-    use crate::deepseek::{ChatMessage, ChatRole, ChatRequest as DsChatRequest};
+    use crate::deepseek::{ChatMessage, ChatRequest as DsChatRequest, ChatRole};
     use tokio_util::sync::CancellationToken;
 
     let ds_cfg = state.deepseek_config().await;
@@ -617,9 +623,7 @@ pub async fn git_log(
     let root = require_root(&state).await?;
     let cfg = state.permission_config().await;
     if !cfg.level.can_shell() {
-        return Err(AppError::Forbidden(
-            "当前权限等级禁止执行 Git log".into(),
-        ));
+        return Err(AppError::Forbidden("当前权限等级禁止执行 Git log".into()));
     }
 
     let limit = q.limit.unwrap_or(10).min(200);

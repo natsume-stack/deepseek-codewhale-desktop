@@ -101,7 +101,9 @@ pub async fn git(
     //   - ReadOnly 允许只读子命令（status / log / diff / branch -v / show / rev-parse / ls-files）
     //   - 写操作子命令（commit / push / pull / merge / rebase / checkout / reset）需 can_shell
     if !permission.can_shell() && !is_readonly_git_args(&args) {
-        return Err(AppError::Forbidden("当前权限等级禁止执行 Git 写操作".into()));
+        return Err(AppError::Forbidden(
+            "当前权限等级禁止执行 Git 写操作".into(),
+        ));
     }
     run_command("git", args, root, 60).await
 }
@@ -114,19 +116,30 @@ fn is_readonly_git_args(args: &[String]) -> bool {
     };
     matches!(
         first,
-        "status" | "log" | "diff" | "show" | "rev-parse" | "ls-files" | "ls-tree"
-        | "branch" | "blame" | "shortlog" | "describe" | "name-rev" | "reflog"
+        "status"
+            | "log"
+            | "diff"
+            | "show"
+            | "rev-parse"
+            | "ls-files"
+            | "ls-tree"
+            | "branch"
+            | "blame"
+            | "shortlog"
+            | "describe"
+            | "name-rev"
+            | "reflog"
     ) && !args.iter().any(|a| {
         // branch 子命令带 -d / -D / -m 等写操作参数时不算只读
-        matches!(a.as_str(), "-d" | "-D" | "-m" | "-M" | "--delete" | "--move")
+        matches!(
+            a.as_str(),
+            "-d" | "-D" | "-m" | "-M" | "--delete" | "--move"
+        )
     })
 }
 
 /// 只读 git（强制只读子命令，权限不足时也允许，用于 Agent Loop 中的环境感知）
-pub async fn git_readonly(
-    root: &Path,
-    args: Vec<String>,
-) -> AppResult<CommandResult> {
+pub async fn git_readonly(root: &Path, args: Vec<String>) -> AppResult<CommandResult> {
     if !is_readonly_git_args(&args) {
         return Err(AppError::BadRequest(format!(
             "git_readonly 仅允许只读子命令，收到: {:?}",
@@ -140,23 +153,44 @@ pub async fn git_readonly(
 pub async fn list_files(root: &Path, rel: &str) -> AppResult<serde_json::Value> {
     let target = resolve(root, rel)?;
     if !target.exists() {
-        return Err(AppError::BadRequest(format!("路径不存在: {}", target.display())));
+        return Err(AppError::BadRequest(format!(
+            "路径不存在: {}",
+            target.display()
+        )));
     }
     if !target.is_dir() {
-        return Err(AppError::BadRequest(format!("不是目录: {}", target.display())));
+        return Err(AppError::BadRequest(format!(
+            "不是目录: {}",
+            target.display()
+        )));
     }
     let mut entries: Vec<serde_json::Value> = Vec::new();
-    let mut rd = tokio::fs::read_dir(&target).await
+    let mut rd = tokio::fs::read_dir(&target)
+        .await
         .map_err(|e| AppError::BadRequest(format!("读取目录失败: {e}")))?;
-    while let Some(entry) = rd.next_entry().await
+    while let Some(entry) = rd
+        .next_entry()
+        .await
         .map_err(|e| AppError::BadRequest(format!("读取条目失败: {e}")))?
     {
         let name = entry.file_name().to_string_lossy().to_string();
         // 过滤忽略目录
-        if matches!(name.as_str(), "node_modules" | "target" | "build" | ".git" | "dist" | ".next" | "__pycache__" | ".venv") {
+        if matches!(
+            name.as_str(),
+            "node_modules"
+                | "target"
+                | "build"
+                | ".git"
+                | "dist"
+                | ".next"
+                | "__pycache__"
+                | ".venv"
+        ) {
             continue;
         }
-        let ft = entry.file_type().await
+        let ft = entry
+            .file_type()
+            .await
             .map_err(|e| AppError::BadRequest(format!("读取类型失败: {e}")))?;
         let metadata = entry.metadata().await.ok();
         let size = metadata.as_ref().map(|m| m.len()).unwrap_or(0);
@@ -240,7 +274,8 @@ pub async fn edit_file(
         )));
     }
     // 读取原内容
-    let original = tokio::fs::read_to_string(&target).await
+    let original = tokio::fs::read_to_string(&target)
+        .await
         .map_err(|e| AppError::BadRequest(format!("读取原文件失败: {e}")))?;
 
     // 顺序应用所有 edit blocks
@@ -276,7 +311,12 @@ pub struct EditBlock {
 ///   2. 若精确匹配出现多次 → 报错"不唯一"
 ///   3. 若精确匹配 0 次 → 尝试行级模糊匹配（忽略首尾空白行）
 ///   4. 仍 0 次 → 报错"未找到"
-fn apply_search_replace(content: &str, search: &str, replace: &str, idx: usize) -> AppResult<String> {
+fn apply_search_replace(
+    content: &str,
+    search: &str,
+    replace: &str,
+    idx: usize,
+) -> AppResult<String> {
     let search_trimmed = search.trim();
     let replace_trimmed = replace.trim();
 
@@ -353,9 +393,12 @@ async fn walk_and_search(
     if out.len() >= max {
         return Ok(());
     }
-    let mut rd = tokio::fs::read_dir(dir).await
+    let mut rd = tokio::fs::read_dir(dir)
+        .await
         .map_err(|e| AppError::BadRequest(format!("读取目录失败: {e}")))?;
-    while let Some(entry) = rd.next_entry().await
+    while let Some(entry) = rd
+        .next_entry()
+        .await
         .map_err(|e| AppError::BadRequest(format!("读取条目失败: {e}")))?
     {
         if out.len() >= max {
@@ -363,18 +406,51 @@ async fn walk_and_search(
         }
         let name = entry.file_name().to_string_lossy().to_string();
         // 过滤忽略目录
-        if matches!(name.as_str(), "node_modules" | "target" | "build" | ".git" | "dist" | ".next" | "__pycache__" | ".venv") {
+        if matches!(
+            name.as_str(),
+            "node_modules"
+                | "target"
+                | "build"
+                | ".git"
+                | "dist"
+                | ".next"
+                | "__pycache__"
+                | ".venv"
+        ) {
             continue;
         }
-        let ft = entry.file_type().await
+        let ft = entry
+            .file_type()
+            .await
             .map_err(|e| AppError::BadRequest(format!("读取类型失败: {e}")))?;
         if ft.is_dir() {
             Box::pin(walk_and_search(&entry.path(), re, max, out)).await?;
         } else if ft.is_file() {
             // 跳过二进制文件（粗略判断扩展名）
-            let ext_ok = entry.path().extension()
+            let ext_ok = entry
+                .path()
+                .extension()
                 .and_then(|e| e.to_str())
-                .map(|e| matches!(e, "rs" | "ts" | "tsx" | "js" | "jsx" | "py" | "go" | "java" | "md" | "toml" | "json" | "yaml" | "yml" | "sh" | "css" | "html"))
+                .map(|e| {
+                    matches!(
+                        e,
+                        "rs" | "ts"
+                            | "tsx"
+                            | "js"
+                            | "jsx"
+                            | "py"
+                            | "go"
+                            | "java"
+                            | "md"
+                            | "toml"
+                            | "json"
+                            | "yaml"
+                            | "yml"
+                            | "sh"
+                            | "css"
+                            | "html"
+                    )
+                })
                 .unwrap_or(false);
             if !ext_ok {
                 continue;
@@ -446,9 +522,7 @@ fn is_dangerous_command(command: &str) -> bool {
         .chars()
         .filter(|c| !c.is_whitespace())
         .collect();
-    DANGEROUS_PATTERNS
-        .iter()
-        .any(|p| collapsed.contains(p))
+    DANGEROUS_PATTERNS.iter().any(|p| collapsed.contains(p))
         || DANGEROUS_PATTERNS_NO_SPACE
             .iter()
             .any(|p| no_space.contains(p))
@@ -501,12 +575,12 @@ async fn run_command(
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
 
-    let child = cmd.spawn().map_err(|e| {
-        AppError::Tool(format!("启动 {program} 失败: {e}"))
-    })?;
+    let child = cmd
+        .spawn()
+        .map_err(|e| AppError::Tool(format!("启动 {program} 失败: {e}")))?;
 
-    let result = tokio::time::timeout(Duration::from_secs(timeout_secs), child.wait_with_output())
-        .await;
+    let result =
+        tokio::time::timeout(Duration::from_secs(timeout_secs), child.wait_with_output()).await;
     match result {
         Ok(Ok(output)) => {
             let exit_code = output.status.code().unwrap_or(-1);

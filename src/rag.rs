@@ -382,7 +382,10 @@ fn extract_keywords(query: &str) -> Vec<String> {
         for part in split_identifier(raw) {
             let lower = part.to_lowercase();
             // 过滤过短 token（单字符噪声）与纯数字
-            if lower.len() >= 2 && !lower.chars().all(|c| c.is_ascii_digit()) && seen.insert(lower.clone()) {
+            if lower.len() >= 2
+                && !lower.chars().all(|c| c.is_ascii_digit())
+                && seen.insert(lower.clone())
+            {
                 result.push(lower);
             }
         }

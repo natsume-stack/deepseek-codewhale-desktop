@@ -29,6 +29,7 @@ import { TitleBar } from './components/TitleBar'
 import { SideNav } from './components/SideNav'
 import { WorkArea } from './components/WorkArea'
 import { SettingsPage, applyAppearanceConfig, type SettingsSection } from './components/SettingsPage'
+import { TaskMonitorPanel } from './components/TaskMonitorPanel'
 import { DialogHost } from './components/DialogHost'
 import { ApprovalDialog } from './components/ApprovalDialog'
 import { useFileTreeStore } from './stores/fileTree'
@@ -36,7 +37,7 @@ import { useChatStore } from './stores/chat'
 import { useSessionsStore } from './stores/sessions'
 import { configApi, projectApi } from './lib/api'
 
-export type NavView = 'chat' | 'settings'
+export type NavView = 'chat' | 'settings' | 'agent'
 
 export default function App() {
   const layout = useResizableLayout()
@@ -132,6 +133,8 @@ export default function App() {
             <div key={view} className="h-full w-full animate-page-transition">
               {view === 'chat' ? (
                 <WorkArea layout={layout} />
+              ) : view === 'agent' ? (
+                <TaskMonitorPanel />
               ) : (
                 <SettingsPage section={settingsSection} />
               )}

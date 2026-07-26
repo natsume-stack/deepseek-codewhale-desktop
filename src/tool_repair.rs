@@ -157,7 +157,11 @@ pub fn detect_storm_calls(history: &[Value]) -> Vec<String> {
             if args_a == args_b && args_b == args_c {
                 alerts.push(format!(
                     "检测到风暴调用：工具 \"{}\" 参数 {} 连续调用 3 次 (索引 {},{},{})",
-                    name_a, args_a, i, i + 1, i + 2
+                    name_a,
+                    args_a,
+                    i,
+                    i + 1,
+                    i + 2
                 ));
                 i += 3;
                 continue;
@@ -173,9 +177,8 @@ pub fn detect_storm_calls(history: &[Value]) -> Vec<String> {
 /// 修复后返回标准 JSON Value。风暴告警会以 `tracing::warn!` 记录但不影响返回值。
 pub fn repair_tool_call(raw: &str, history: &[Value]) -> AppResult<Value> {
     let repaired = repair_truncated_json(raw);
-    let parsed: Value = serde_json::from_str(&repaired).map_err(|e| {
-        AppError::Tool(format!("工具调用 JSON 修复后仍解析失败: {e}; raw={raw}"))
-    })?;
+    let parsed: Value = serde_json::from_str(&repaired)
+        .map_err(|e| AppError::Tool(format!("工具调用 JSON 修复后仍解析失败: {e}; raw={raw}")))?;
     let flattened = repair_deep_nested(parsed);
 
     // 风暴检测仅针对有 name 字段的标准工具调用

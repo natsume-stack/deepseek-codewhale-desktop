@@ -56,7 +56,9 @@ pub async fn test_deepseek(
 ) -> Result<Json<Value>, crate::error::AppError> {
     let cfg = state.deepseek_config().await;
     state.client.probe(&cfg).await?;
-    Ok(Json(json!({ "ok": true, "model": cfg.model, "baseUrl": cfg.base_url })))
+    Ok(Json(
+        json!({ "ok": true, "model": cfg.model, "baseUrl": cfg.base_url }),
+    ))
 }
 
 /* ============================================================
@@ -325,10 +327,9 @@ pub async fn set_active_profile(
         .find(|p| p.id == id)
         .cloned()
         .ok_or_else(|| AppError::BadRequest(format!("profile 不存在: {id}")))?;
-    let encrypted_key = profile
-        .api_key_encrypted
-        .as_deref()
-        .ok_or_else(|| AppError::BadRequest("该模型档案没有可用 API 密钥，请先编辑并保存密钥".into()))?;
+    let encrypted_key = profile.api_key_encrypted.as_deref().ok_or_else(|| {
+        AppError::BadRequest("该模型档案没有可用 API 密钥，请先编辑并保存密钥".into())
+    })?;
     let api_key = String::from_utf8(base64_decode(encrypted_key)?)
         .map_err(|_| AppError::BadRequest("API 密钥编码无效".into()))?;
     cfg.model_profiles.active_profile_id = Some(id.clone());
@@ -365,7 +366,9 @@ pub async fn set_rag_config(
 /* ---------- 格式化卡片 ---------- */
 
 /// GET /api/config/formatter → 返回格式化配置。
-pub async fn get_formatter_config(State(state): State<SharedState>) -> Result<Json<Value>, AppError> {
+pub async fn get_formatter_config(
+    State(state): State<SharedState>,
+) -> Result<Json<Value>, AppError> {
     let cfg = state.config.read().await;
     Ok(Json(json!(cfg.formatter)))
 }
@@ -434,7 +437,10 @@ pub async fn clear_project_memory(
     State(state): State<SharedState>,
     Json(body): Json<ClearMemoryBody>,
 ) -> Result<Json<Value>, AppError> {
-    state.sessions.clear_project_memory(&body.session_id).await?;
+    state
+        .sessions
+        .clear_project_memory(&body.session_id)
+        .await?;
     tracing::info!("已清空项目记忆: {}", body.session_id);
     Ok(Json(json!({ "ok": true, "sessionId": body.session_id })))
 }
@@ -523,7 +529,9 @@ pub async fn export_audit_log(State(state): State<SharedState>) -> Result<Json<V
         if !p.trim().is_empty() {
             if let Ok(text) = std::fs::read_to_string(&p) {
                 let lines: Vec<&str> = text.lines().collect();
-                return Ok(Json(json!({ "log": text, "entries": lines, "count": lines.len() })));
+                return Ok(Json(
+                    json!({ "log": text, "entries": lines, "count": lines.len() }),
+                ));
             }
         }
     }

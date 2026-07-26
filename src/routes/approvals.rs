@@ -119,7 +119,11 @@ pub async fn decide_approval(
 
     if let Some(action) = action {
         match action {
-            crate::state::PendingAction::ApplyDiff { diff_id, file_path, content } => {
+            crate::state::PendingAction::ApplyDiff {
+                diff_id,
+                file_path,
+                content,
+            } => {
                 // 确保父目录存在
                 if let Some(p) = file_path.parent() {
                     if let Err(e) = std::fs::create_dir_all(p) {
@@ -138,7 +142,11 @@ pub async fn decide_approval(
                             }
                         }
                         executed = true;
-                        tracing::info!("审批回放 ApplyDiff: diff_id={}, file={}", diff_id, file_path.display());
+                        tracing::info!(
+                            "审批回放 ApplyDiff: diff_id={}, file={}",
+                            diff_id,
+                            file_path.display()
+                        );
                     }
                     Err(e) => {
                         execution_error = Some(format!("写盘失败: {e}"));
@@ -149,7 +157,13 @@ pub async fn decide_approval(
                 let root = state.project_root().await;
                 if let Some(root) = root {
                     // 回放时强制使用 FullAccess（用户已审批通过）
-                    match crate::tools::git(&root, args.clone(), crate::config::PermissionLevel::FullAccess).await {
+                    match crate::tools::git(
+                        &root,
+                        args.clone(),
+                        crate::config::PermissionLevel::FullAccess,
+                    )
+                    .await
+                    {
                         Ok(r) => {
                             executed = r.success;
                             execution_result = Some(json!({
@@ -179,7 +193,14 @@ pub async fn decide_approval(
                 } else {
                     format!("{} {}", program, args.join(" "))
                 };
-                match crate::tools::shell(&cwd, full_cmd, 120, crate::config::PermissionLevel::FullAccess).await {
+                match crate::tools::shell(
+                    &cwd,
+                    full_cmd,
+                    120,
+                    crate::config::PermissionLevel::FullAccess,
+                )
+                .await
+                {
                     Ok(r) => {
                         executed = r.success;
                         execution_result = Some(json!({

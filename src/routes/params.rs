@@ -36,7 +36,9 @@ pub async fn update_params(
     }
     if let Some(cl) = body.context_length {
         if cl > 1_000_000 {
-            return Err(AppError::BadRequest("contextLength 最大为 1,000,000".into()));
+            return Err(AppError::BadRequest(
+                "contextLength 最大为 1,000,000".into(),
+            ));
         }
         cfg.inference.context_length = cl;
     }

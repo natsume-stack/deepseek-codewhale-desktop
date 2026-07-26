@@ -190,9 +190,7 @@ impl SkillStore {
                     score += 0.3;
                     matched.push(m.name.clone());
                 }
-                if !m.description.is_empty()
-                    && msg_lower.contains(&m.description.to_lowercase())
-                {
+                if !m.description.is_empty() && msg_lower.contains(&m.description.to_lowercase()) {
                     score += 0.2;
                     matched.push(m.description.clone());
                 }
@@ -208,7 +206,11 @@ impl SkillStore {
                 })
             })
             .collect();
-        out.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        out.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         out
     }
 
@@ -412,15 +414,40 @@ fn builtin_skills() -> Vec<SkillDefinition> {
             "code-review",
             "代码评审",
             "全项目规范、性能、安全漏洞评审",
-            vec!["review".into(), "评审".into(), "code review".into(), "代码评审".into()],
+            vec![
+                "review".into(),
+                "评审".into(),
+                "code review".into(),
+                "代码评审".into(),
+            ],
             "review",
             "WorkspaceWrite",
             vec!["read_file".into(), "git".into()],
             vec![
-                step(1, "analyze", "扫描项目结构，识别模块边界与依赖", Some("扫描项目结构")),
-                step(2, "analyze", "检查代码规范（命名、注释、风格）", Some("检查代码规范")),
-                step(3, "analyze", "检查性能热点与潜在 N+1/重复计算", Some("检查性能问题")),
-                step(4, "analyze", "检查安全漏洞（注入、越权、敏感信息泄漏）", Some("检查安全漏洞")),
+                step(
+                    1,
+                    "analyze",
+                    "扫描项目结构，识别模块边界与依赖",
+                    Some("扫描项目结构"),
+                ),
+                step(
+                    2,
+                    "analyze",
+                    "检查代码规范（命名、注释、风格）",
+                    Some("检查代码规范"),
+                ),
+                step(
+                    3,
+                    "analyze",
+                    "检查性能热点与潜在 N+1/重复计算",
+                    Some("检查性能问题"),
+                ),
+                step(
+                    4,
+                    "analyze",
+                    "检查安全漏洞（注入、越权、敏感信息泄漏）",
+                    Some("检查安全漏洞"),
+                ),
                 step(5, "generate", "输出结构化评审报告", None),
             ],
             r#"---
@@ -451,14 +478,35 @@ required_tools: read_file,git
             "tdd-gen",
             "测试生成",
             "自动生成单元/集成测试用例",
-            vec!["test".into(), "测试".into(), "tdd".into(), "unit test".into(), "单元测试".into()],
+            vec![
+                "test".into(),
+                "测试".into(),
+                "tdd".into(),
+                "unit test".into(),
+                "单元测试".into(),
+            ],
             "test",
             "WorkspaceWrite",
             vec!["read_file".into(), "write_file".into(), "shell".into()],
             vec![
-                step(1, "analyze", "分析目标函数/模块的输入输出与边界", Some("分析目标函数")),
-                step(2, "generate", "生成测试用例（正常/边界/异常）", Some("生成测试用例")),
-                step(3, "test", "沙箱执行校验，捕获失败并迭代", Some("沙箱执行校验")),
+                step(
+                    1,
+                    "analyze",
+                    "分析目标函数/模块的输入输出与边界",
+                    Some("分析目标函数"),
+                ),
+                step(
+                    2,
+                    "generate",
+                    "生成测试用例（正常/边界/异常）",
+                    Some("生成测试用例"),
+                ),
+                step(
+                    3,
+                    "test",
+                    "沙箱执行校验，捕获失败并迭代",
+                    Some("沙箱执行校验"),
+                ),
                 step(4, "hunk", "输出最终测试文件 Hunk", None),
             ],
             r#"---
@@ -488,13 +536,29 @@ required_tools: read_file,write_file,shell
             "git-workflow",
             "Git 工作流",
             "Conventional Commit、PR 评审、分支管理",
-            vec!["commit".into(), "提交".into(), "pr".into(), "pull request".into(), "分支".into()],
+            vec![
+                "commit".into(),
+                "提交".into(),
+                "pr".into(),
+                "pull request".into(),
+                "分支".into(),
+            ],
             "git",
             "FullAccess",
             vec!["git".into(), "shell".into()],
             vec![
-                step(1, "analyze", "读取 git status 与 diff 摘要", Some("读取 git 状态")),
-                step(2, "generate", "按 Conventional Commit 生成 message", Some("生成 commit message")),
+                step(
+                    1,
+                    "analyze",
+                    "读取 git status 与 diff 摘要",
+                    Some("读取 git 状态"),
+                ),
+                step(
+                    2,
+                    "generate",
+                    "按 Conventional Commit 生成 message",
+                    Some("生成 commit message"),
+                ),
                 step(3, "commit", "走审批队列，确认后提交", Some("提交审批")),
             ],
             r#"---
@@ -527,14 +591,29 @@ required_tools: git,shell
             "large-refactor",
             "大型重构",
             "模块化分层重构",
-            vec!["refactor".into(), "重构".into(), "模块化".into(), "拆分".into()],
+            vec![
+                "refactor".into(),
+                "重构".into(),
+                "模块化".into(),
+                "拆分".into(),
+            ],
             "refactor",
             "WorkspaceWrite",
             vec!["read_file".into(), "write_file".into(), "shell".into()],
             vec![
                 step(1, "analyze", "分析依赖图与调用链", Some("分析依赖关系")),
-                step(2, "analyze", "拆解为可独立验证的子任务", Some("拆解重构 todo")),
-                step(3, "hunk", "分步生成 Hunk，每步可独立 apply", Some("分步生成 Hunk")),
+                step(
+                    2,
+                    "analyze",
+                    "拆解为可独立验证的子任务",
+                    Some("拆解重构 todo"),
+                ),
+                step(
+                    3,
+                    "hunk",
+                    "分步生成 Hunk，每步可独立 apply",
+                    Some("分步生成 Hunk"),
+                ),
                 step(4, "test", "沙箱验证（编译/测试）", None),
             ],
             r#"---
@@ -565,14 +644,25 @@ required_tools: read_file,write_file,shell
             "bug-diagnose",
             "Bug 诊断",
             "沙箱报错堆栈定位修复",
-            vec!["bug".into(), "错误".into(), "报错".into(), "diagnose".into(), "修复 bug".into()],
+            vec![
+                "bug".into(),
+                "错误".into(),
+                "报错".into(),
+                "diagnose".into(),
+                "修复 bug".into(),
+            ],
             "bug",
             "WorkspaceWrite",
             vec!["read_file".into(), "write_file".into(), "shell".into()],
             vec![
                 step(1, "analyze", "捕获报错堆栈与复现路径", Some("捕获报错堆栈")),
                 step(2, "analyze", "定位相关文件与函数", Some("定位问题文件")),
-                step(3, "analyze", "分析根因（数据/控制流/边界）", Some("分析根因")),
+                step(
+                    3,
+                    "analyze",
+                    "分析根因（数据/控制流/边界）",
+                    Some("分析根因"),
+                ),
                 step(4, "hunk", "生成修复 Hunk 并说明修改理由", None),
             ],
             r#"---
@@ -602,13 +692,24 @@ required_tools: read_file,write_file,shell
             "lint-fix",
             "格式化修复",
             "格式化与 lint 自动修复",
-            vec!["lint".into(), "格式化".into(), "format".into(), "prettier".into(), "rustfmt".into()],
+            vec![
+                "lint".into(),
+                "格式化".into(),
+                "format".into(),
+                "prettier".into(),
+                "rustfmt".into(),
+            ],
             "lint",
             "WorkspaceWrite",
             vec!["read_file".into(), "write_file".into(), "shell".into()],
             vec![
                 step(1, "analyze", "扫描目标文件与格式问题", Some("扫描格式问题")),
-                step(2, "shell", "调用 formatter（rustfmt/prettier）", Some("调用 formatter")),
+                step(
+                    2,
+                    "shell",
+                    "调用 formatter（rustfmt/prettier）",
+                    Some("调用 formatter"),
+                ),
                 step(3, "hunk", "生成格式化 Hunk", None),
             ],
             r#"---
@@ -638,14 +739,29 @@ required_tools: read_file,write_file,shell
             "project-init",
             "项目初始化",
             "脚手架生成",
-            vec!["init".into(), "新建项目".into(), "scaffold".into(), "脚手架".into()],
+            vec![
+                "init".into(),
+                "新建项目".into(),
+                "scaffold".into(),
+                "脚手架".into(),
+            ],
             "init",
             "WorkspaceWrite",
             vec!["write_file".into(), "shell".into()],
             vec![
-                step(1, "analyze", "选择模板（Rust/Node/Python/Tauri）", Some("选择项目模板")),
+                step(
+                    1,
+                    "analyze",
+                    "选择模板（Rust/Node/Python/Tauri）",
+                    Some("选择项目模板"),
+                ),
                 step(2, "generate", "生成目录结构", Some("生成目录结构")),
-                step(3, "write", "写入基础文件（Cargo.toml/package.json/README）", None),
+                step(
+                    3,
+                    "write",
+                    "写入基础文件（Cargo.toml/package.json/README）",
+                    None,
+                ),
             ],
             r#"---
 id: project-init
@@ -675,14 +791,36 @@ required_tools: write_file,shell
             "perf-optimize",
             "性能优化",
             "hot path 分析、内存泄漏检测、异步任务优化",
-            vec!["performance".into(), "性能".into(), "优化".into(), "perf".into(), "慢".into(), "内存泄漏".into()],
+            vec![
+                "performance".into(),
+                "性能".into(),
+                "优化".into(),
+                "perf".into(),
+                "慢".into(),
+                "内存泄漏".into(),
+            ],
             "refactor",
             "WorkspaceWrite",
             vec!["read_file".into(), "shell".into()],
             vec![
-                step(1, "analyze", "采集性能数据（flamegraph/耗时统计）", Some("采集性能数据")),
-                step(2, "analyze", "识别 hot path 与瓶颈（CPU/IO/内存）", Some("识别瓶颈")),
-                step(3, "analyze", "检查内存泄漏与异步任务堆积", Some("检查内存泄漏")),
+                step(
+                    1,
+                    "analyze",
+                    "采集性能数据（flamegraph/耗时统计）",
+                    Some("采集性能数据"),
+                ),
+                step(
+                    2,
+                    "analyze",
+                    "识别 hot path 与瓶颈（CPU/IO/内存）",
+                    Some("识别瓶颈"),
+                ),
+                step(
+                    3,
+                    "analyze",
+                    "检查内存泄漏与异步任务堆积",
+                    Some("检查内存泄漏"),
+                ),
                 step(4, "hunk", "生成优化 Hunk 并说明预期收益", None),
             ],
             r#"---
@@ -713,14 +851,36 @@ required_tools: read_file,shell
             "security-audit",
             "安全审计",
             "SQL 注入、XSS、密钥泄露、依赖漏洞扫描",
-            vec!["security".into(), "安全".into(), "审计".into(), "audit".into(), "漏洞".into(), "CVE".into()],
+            vec![
+                "security".into(),
+                "安全".into(),
+                "审计".into(),
+                "audit".into(),
+                "漏洞".into(),
+                "CVE".into(),
+            ],
             "review",
             "ReadOnly",
             vec!["read_file".into(), "shell".into()],
             vec![
-                step(1, "analyze", "扫描密钥泄露（硬编码 token/密钥/.env）", Some("扫描密钥泄露")),
-                step(2, "analyze", "扫描注入漏洞（SQL/Command/XSS）", Some("扫描注入漏洞")),
-                step(3, "analyze", "检查依赖 CVE 与版本漏洞", Some("检查依赖漏洞")),
+                step(
+                    1,
+                    "analyze",
+                    "扫描密钥泄露（硬编码 token/密钥/.env）",
+                    Some("扫描密钥泄露"),
+                ),
+                step(
+                    2,
+                    "analyze",
+                    "扫描注入漏洞（SQL/Command/XSS）",
+                    Some("扫描注入漏洞"),
+                ),
+                step(
+                    3,
+                    "analyze",
+                    "检查依赖 CVE 与版本漏洞",
+                    Some("检查依赖漏洞"),
+                ),
                 step(4, "generate", "输出安全审计报告（按风险等级分级）", None),
             ],
             r#"---
@@ -752,14 +912,30 @@ required_tools: read_file,shell
             "api-design",
             "API 设计",
             "RESTful API 设计、OpenAPI 规范、错误码、版本兼容",
-            vec!["api".into(), "接口".into(), "REST".into(), "RESTful".into(), "OpenAPI".into()],
+            vec![
+                "api".into(),
+                "接口".into(),
+                "REST".into(),
+                "RESTful".into(),
+                "OpenAPI".into(),
+            ],
             "refactor",
             "WorkspaceWrite",
             vec!["read_file".into(), "write_file".into()],
             vec![
                 step(1, "analyze", "梳理业务领域与资源边界", Some("梳理业务领域")),
-                step(2, "generate", "设计 RESTful 路由与资源模型", Some("设计路由")),
-                step(3, "generate", "定义错误码与 OpenAPI 规范", Some("定义错误码")),
+                step(
+                    2,
+                    "generate",
+                    "设计 RESTful 路由与资源模型",
+                    Some("设计路由"),
+                ),
+                step(
+                    3,
+                    "generate",
+                    "定义错误码与 OpenAPI 规范",
+                    Some("定义错误码"),
+                ),
                 step(4, "generate", "生成 API 文档与 Mock", None),
             ],
             r#"---
@@ -791,13 +967,24 @@ required_tools: read_file,write_file
             "doc-gen",
             "文档生成",
             "README、API 文档、注释、CHANGELOG 自动生成",
-            vec!["文档".into(), "doc".into(), "document".into(), "README".into(), "文档生成".into()],
+            vec![
+                "文档".into(),
+                "doc".into(),
+                "document".into(),
+                "README".into(),
+                "文档生成".into(),
+            ],
             "init",
             "WorkspaceWrite",
             vec!["read_file".into(), "write_file".into()],
             vec![
                 step(1, "analyze", "扫描模块入口与公共 API", Some("扫描模块入口")),
-                step(2, "generate", "生成 README/CHANGELOG 骨架", Some("生成文档骨架")),
+                step(
+                    2,
+                    "generate",
+                    "生成 README/CHANGELOG 骨架",
+                    Some("生成文档骨架"),
+                ),
                 step(3, "generate", "为公共函数生成注释与示例", None),
             ],
             r#"---
@@ -827,12 +1014,23 @@ required_tools: read_file,write_file
             "dep-check",
             "依赖检查",
             "过期依赖、安全漏洞、版本冲突检测与升级",
-            vec!["依赖".into(), "dependency".into(), "upgrade".into(), "升级".into(), "outdated".into()],
+            vec![
+                "依赖".into(),
+                "dependency".into(),
+                "upgrade".into(),
+                "升级".into(),
+                "outdated".into(),
+            ],
             "lint",
             "WorkspaceWrite",
             vec!["read_file".into(), "shell".into()],
             vec![
-                step(1, "shell", "运行 outdated / audit 工具", Some("检查过期依赖")),
+                step(
+                    1,
+                    "shell",
+                    "运行 outdated / audit 工具",
+                    Some("检查过期依赖"),
+                ),
                 step(2, "analyze", "识别冲突与不兼容版本", Some("识别版本冲突")),
                 step(3, "hunk", "生成升级 Hunk 并验证编译", None),
             ],
@@ -863,13 +1061,29 @@ required_tools: read_file,shell
             "dockerize",
             "Docker 化",
             "Dockerfile、docker-compose、镜像优化",
-            vec!["docker".into(), "容器".into(), "Dockerfile".into(), "镜像".into(), "容器化".into()],
+            vec![
+                "docker".into(),
+                "容器".into(),
+                "Dockerfile".into(),
+                "镜像".into(),
+                "容器化".into(),
+            ],
             "init",
             "WorkspaceWrite",
             vec!["read_file".into(), "write_file".into(), "shell".into()],
             vec![
-                step(1, "analyze", "识别运行时与依赖（语言/端口/卷）", Some("识别运行时")),
-                step(2, "generate", "生成多阶段 Dockerfile 与 .dockerignore", Some("生成 Dockerfile")),
+                step(
+                    1,
+                    "analyze",
+                    "识别运行时与依赖（语言/端口/卷）",
+                    Some("识别运行时"),
+                ),
+                step(
+                    2,
+                    "generate",
+                    "生成多阶段 Dockerfile 与 .dockerignore",
+                    Some("生成 Dockerfile"),
+                ),
                 step(3, "generate", "生成 docker-compose.yml（含健康检查）", None),
             ],
             r#"---
@@ -899,13 +1113,25 @@ required_tools: read_file,write_file,shell
             "cicd-setup",
             "CI/CD 配置",
             "GitHub Actions、GitLab CI、自动化流水线",
-            vec!["CI".into(), "CD".into(), "pipeline".into(), "Actions".into(), "流水线".into(), "自动化".into()],
+            vec![
+                "CI".into(),
+                "CD".into(),
+                "pipeline".into(),
+                "Actions".into(),
+                "流水线".into(),
+                "自动化".into(),
+            ],
             "init",
             "WorkspaceWrite",
             vec!["read_file".into(), "write_file".into()],
             vec![
                 step(1, "analyze", "识别构建/测试/部署流程", Some("识别流程")),
-                step(2, "generate", "生成 workflow 文件（GitHub Actions/GitLab CI）", Some("生成 workflow")),
+                step(
+                    2,
+                    "generate",
+                    "生成 workflow 文件（GitHub Actions/GitLab CI）",
+                    Some("生成 workflow"),
+                ),
                 step(3, "generate", "配置缓存与并发限制", None),
             ],
             r#"---
@@ -935,14 +1161,34 @@ required_tools: read_file,write_file
             "db-migration",
             "数据库迁移",
             "schema 变更、数据迁移、回滚脚本",
-            vec!["migration".into(), "迁移".into(), "schema".into(), "数据库迁移".into()],
+            vec![
+                "migration".into(),
+                "迁移".into(),
+                "schema".into(),
+                "数据库迁移".into(),
+            ],
             "refactor",
             "WorkspaceWrite",
             vec!["read_file".into(), "write_file".into(), "shell".into()],
             vec![
-                step(1, "analyze", "对比新旧 schema 差异", Some("对比 schema 差异")),
-                step(2, "generate", "生成迁移脚本（up/down）", Some("生成迁移脚本")),
-                step(3, "generate", "生成数据迁移与回滚脚本", Some("生成回滚脚本")),
+                step(
+                    1,
+                    "analyze",
+                    "对比新旧 schema 差异",
+                    Some("对比 schema 差异"),
+                ),
+                step(
+                    2,
+                    "generate",
+                    "生成迁移脚本（up/down）",
+                    Some("生成迁移脚本"),
+                ),
+                step(
+                    3,
+                    "generate",
+                    "生成数据迁移与回滚脚本",
+                    Some("生成回滚脚本"),
+                ),
                 step(4, "test", "沙箱执行验证（迁移 + 回滚）", None),
             ],
             r#"---
@@ -973,13 +1219,30 @@ required_tools: read_file,write_file,shell
             "code-style",
             "代码风格统一",
             "ESLint、rustfmt、prettier、.editorconfig",
-            vec!["风格".into(), "style".into(), "lint".into(), "eslint".into(), "rustfmt".into(), "prettier".into()],
+            vec![
+                "风格".into(),
+                "style".into(),
+                "lint".into(),
+                "eslint".into(),
+                "rustfmt".into(),
+                "prettier".into(),
+            ],
             "lint",
             "WorkspaceWrite",
             vec!["read_file".into(), "write_file".into(), "shell".into()],
             vec![
-                step(1, "analyze", "识别语言与既有风格配置", Some("识别语言与风格")),
-                step(2, "generate", "生成 .editorconfig / rustfmt.toml / .eslintrc", Some("生成风格配置")),
+                step(
+                    1,
+                    "analyze",
+                    "识别语言与既有风格配置",
+                    Some("识别语言与风格"),
+                ),
+                step(
+                    2,
+                    "generate",
+                    "生成 .editorconfig / rustfmt.toml / .eslintrc",
+                    Some("生成风格配置"),
+                ),
                 step(3, "shell", "执行格式化并生成统一 Hunk", None),
             ],
             r#"---
@@ -1009,14 +1272,34 @@ required_tools: read_file,write_file,shell
             "release-notes",
             "版本发布说明",
             "CHANGELOG、release notes、版本号管理",
-            vec!["release".into(), "发布".into(), "changelog".into(), "版本发布".into()],
+            vec![
+                "release".into(),
+                "发布".into(),
+                "changelog".into(),
+                "版本发布".into(),
+            ],
             "git",
             "WorkspaceWrite",
             vec!["read_file".into(), "git".into()],
             vec![
-                step(1, "analyze", "提取自上次发布以来的 commit 列表", Some("提取 commit 列表")),
-                step(2, "generate", "按 Conventional Commit 分类生成 CHANGELOG", Some("生成 CHANGELOG")),
-                step(3, "generate", "确定版本号（SemVer）并生成 release notes", None),
+                step(
+                    1,
+                    "analyze",
+                    "提取自上次发布以来的 commit 列表",
+                    Some("提取 commit 列表"),
+                ),
+                step(
+                    2,
+                    "generate",
+                    "按 Conventional Commit 分类生成 CHANGELOG",
+                    Some("生成 CHANGELOG"),
+                ),
+                step(
+                    3,
+                    "generate",
+                    "确定版本号（SemVer）并生成 release notes",
+                    None,
+                ),
             ],
             r#"---
 id: release-notes
@@ -1073,12 +1356,7 @@ fn build_skill(
     }
 }
 
-fn step(
-    order: usize,
-    action: &str,
-    description: &str,
-    todo_text: Option<&str>,
-) -> SkillStep {
+fn step(order: usize, action: &str, description: &str, todo_text: Option<&str>) -> SkillStep {
     SkillStep {
         order,
         description: description.to_string(),

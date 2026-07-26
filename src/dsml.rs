@@ -128,7 +128,10 @@ impl DsmlToolCall {
                 .find("</arg>")
                 .ok_or_else(|| AppError::BadRequest("DSML <arg> 缺少 </arg> 闭合".into()))?;
             let value = &inner[value_start..value_start + value_end_rel];
-            args.insert(arg_name.clone(), serde_json::Value::String(xml_unescape(value)));
+            args.insert(
+                arg_name.clone(),
+                serde_json::Value::String(xml_unescape(value)),
+            );
             pos = value_start + value_end_rel + "</arg>".len();
         }
 
@@ -310,9 +313,7 @@ fn split_attrs(s: &str) -> AppResult<Vec<(String, String)>> {
         let key = rest[..eq].trim().to_string();
         let after = rest[eq + 1..].trim_start();
         if !after.starts_with('"') {
-            return Err(AppError::BadRequest(
-                "DSML 属性值必须用 \" 包裹".into(),
-            ));
+            return Err(AppError::BadRequest("DSML 属性值必须用 \" 包裹".into()));
         }
         let value_end = after[1..]
             .find('"')

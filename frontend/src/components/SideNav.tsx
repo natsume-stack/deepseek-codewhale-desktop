@@ -163,6 +163,12 @@ export function SideNav({ view, onViewChange, onNewSession, onSessionSelect, set
           active={spOpen}
           onClick={() => setSpOpen(true)}
         />
+        <NavAction
+          icon={<AgentIcon />}
+          label="自治任务"
+          active={view === 'agent'}
+          onClick={() => onViewChange('agent')}
+        />
       </div>
 
       {/* === 搜索框（长椭圆 pill） === */}
@@ -437,6 +443,17 @@ function PluginIcon() {
   return (
     <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
       <path d="M6 3v2M10 3v2M4 5h8v3a4 4 0 11-8 0V5zM8 12v2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+    </svg>
+  )
+}
+
+function AgentIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+      <rect x="3" y="5" width="10" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
+      <circle cx="6" cy="9" r="0.9" fill="currentColor" />
+      <circle cx="10" cy="9" r="0.9" fill="currentColor" />
+      <path d="M8 3v2M2 9h1M13 9h1" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
     </svg>
   )
 }

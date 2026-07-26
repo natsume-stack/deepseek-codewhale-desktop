@@ -4,8 +4,133 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>CodeWhale</title>
+    <style>
+      /* ===== 开屏 Splash (Codex 风格) =====
+         在 WebView 解析 HTML 的瞬间立即显示,无需等待 React bundle 加载。
+         React 挂载后由 main.tsx 添加 .fade-out 类并移除节点。
+         背景透明,让 Tauri Mica 云母材质透出。 */
+      #codewhale-splash {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 22px;
+        background: transparent;
+        z-index: 99999;
+        transition: opacity 480ms cubic-bezier(0.34, 1.56, 0.64, 1),
+                    transform 480ms cubic-bezier(0.34, 1.56, 0.64, 1);
+        font-family: "Microsoft YaHei UI", "PingFang SC", "Segoe UI Variable",
+                     system-ui, -apple-system, sans-serif;
+        color: rgba(255, 255, 255, 0.95);
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+        user-select: none;
+        pointer-events: none;
+      }
+
+      #codewhale-splash.fade-out {
+        opacity: 0;
+        transform: scale(0.96);
+      }
+
+      .splash-logo {
+        width: 96px;
+        height: 96px;
+        border-radius: 22px;
+        background: #111315;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+        animation: splash-float 2.4s cubic-bezier(0.34, 1.56, 0.64, 1) infinite;
+      }
+
+      .splash-logo svg {
+        width: 60px;
+        height: 60px;
+      }
+
+      .splash-words {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .splash-title {
+        font-size: 30px;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        color: rgba(255, 255, 255, 0.95);
+        margin: 0;
+      }
+
+      .splash-subtitle {
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: rgba(255, 255, 255, 0.38);
+        margin: 0;
+      }
+
+      .splash-dots {
+        display: flex;
+        gap: 8px;
+        margin-top: 6px;
+      }
+
+      .splash-dots span {
+        width: 6px;
+        height: 6px;
+        border-radius: 9999px;
+        background: rgba(255, 255, 255, 0.62);
+        animation: splash-pulse 1.4s cubic-bezier(0.34, 1.56, 0.64, 1) infinite;
+      }
+
+      .splash-dots span:nth-child(2) { animation-delay: 0.18s; }
+      .splash-dots span:nth-child(3) { animation-delay: 0.36s; }
+
+      @keyframes splash-float {
+        0%, 100% { transform: translateY(0); }
+        50%      { transform: translateY(-6px); }
+      }
+
+      @keyframes splash-pulse {
+        0%, 100% { opacity: 0.3; transform: scale(0.8); }
+        50%      { opacity: 1;   transform: scale(1.2); }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .splash-logo,
+        .splash-dots span { animation: none; }
+      }
+    </style>
   </head>
   <body>
+    <!-- 开屏 Splash:WebView 加载即显示,React 挂载后由 main.tsx 移除 -->
+    <div id="codewhale-splash" aria-hidden="true">
+      <div class="splash-logo">
+        <!-- 内联 codewhale-mark.svg,避免额外网络请求 -->
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+          <g stroke="#ffffff" stroke-linecap="round" stroke-linejoin="round" stroke-width="46">
+            <path d="M256 92c77 0 140 63 140 140 0 77-63 140-140 140-77 0-140-63-140-140 0-46 38-84 84-84 46 0 84 38 84 84 0 46-38 84-84 84"/>
+            <path d="M256 420c-77 0-140-63-140-140"/>
+          </g>
+          <circle cx="256" cy="256" r="22" fill="#339cff"/>
+        </svg>
+      </div>
+      <div class="splash-words">
+        <h1 class="splash-title">CodeWhale</h1>
+        <p class="splash-subtitle">Autonomous Coding Agent</p>
+      </div>
+      <div class="splash-dots" aria-hidden="true">
+        <span></span><span></span><span></span>
+      </div>
+    </div>
+
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

@@ -167,7 +167,8 @@ impl SessionManager {
             .get_mut(id)
             .ok_or_else(|| AppError::SessionNotFound(id.to_string()))?;
         if !assistant_content.is_empty() {
-            s.messages.push(ChatMessage::assistant(assistant_content.clone()));
+            s.messages
+                .push(ChatMessage::assistant(assistant_content.clone()));
             if let Some(cache) = s.cache.as_mut() {
                 cache.append_history(CacheMessage::assistant(assistant_content));
             }
@@ -199,7 +200,8 @@ impl SessionManager {
         if assistant_content.is_empty() {
             return Ok(());
         }
-        s.messages.push(ChatMessage::assistant(assistant_content.clone()));
+        s.messages
+            .push(ChatMessage::assistant(assistant_content.clone()));
         if let Some(cache) = s.cache.as_mut() {
             // 先归档当前 current_message 到 history（保证 user 在 assistant 之前）
             if !cache.current_message.is_empty() {
@@ -290,12 +292,7 @@ impl SessionManager {
     }
 
     /// 挂载文件到会话缓存（仅追加，不插入中间）。
-    pub async fn mount_file(
-        &self,
-        id: &str,
-        path: String,
-        content: String,
-    ) -> AppResult<()> {
+    pub async fn mount_file(&self, id: &str, path: String, content: String) -> AppResult<()> {
         let mut map = self.inner.write().await;
         let s = map
             .get_mut(id)

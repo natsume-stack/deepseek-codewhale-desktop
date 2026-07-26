@@ -6,6 +6,7 @@
  * 仅封装常规 JSON 接口；SSE 流式见 lib/sse.ts
  */
 import type {
+  AgentTask,
   ApiProfile,
   ApprovalKind,
   ApprovalRequest,
@@ -14,6 +15,7 @@ import type {
   CacheStats,
   DeepSeekConfig,
   DiffEntry,
+  ExecutionMode,
   FileNode,
   FormatterConfig,
   GitCommit,
@@ -44,6 +46,7 @@ import type {
   SkillsConfig,
   TodoItem,
   TodoStatus,
+  ToolInfo,
 } from '../types'
 
 /**
@@ -443,6 +446,57 @@ export const sandboxApi = {
  * ============================================================ */
 export const modelProfilesApi = {
   list: () => request<{ profiles: ModelProfile[] }>('GET', '/model-profiles'),
+}
+
+/* ============================================================
+ * Agent 自治任务（自治 Agent 模式）
+ *
+ * 与后端 /api/agent/* 路由对齐：
+ *   - listTasks      GET    /agent/tasks?session_id=   -> AgentTask[]
+ *   - getTask        GET    /agent/tasks/:id           -> AgentTask（含 history）
+ *   - createTask     POST   /agent/tasks               -> AgentTask
+ *   - startTask      POST   /agent/tasks/:id/start     -> 204
+ *   - pauseTask      POST   /agent/tasks/:id/pause     -> 204
+ *   - resumeTask     POST   /agent/tasks/:id/resume    -> 204
+ *   - stopTask       POST   /agent/tasks/:id/stop      -> 204
+ *   - listTools      GET    /agent/tools               -> ToolInfo[]
+ *   - getDefaultMode GET    /agent/mode                -> ExecutionMode
+ *   - setDefaultMode PUT    /agent/mode                -> 204
+ *
+ * SSE 流式端点（不在本客户端内消费，由 store 用 EventSource 订阅）：
+ *   - taskStreamUrl  GET    /agent/tasks/:id/stream
+ * ============================================================ */
+export const agentApi = {
+  listTasks: (sessionId?: string) =>
+    request<AgentTask[]>(
+      'GET',
+      `/agent/tasks${sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : ''}`,
+    ),
+  getTask: (id: string) =>
+    request<AgentTask>('GET', `/agent/tasks/${encodeURIComponent(id)}`),
+  createTask: (sessionId: string, userRequest: string, mode: ExecutionMode) =>
+    request<AgentTask>('POST', '/agent/tasks', {
+      session_id: sessionId,
+      user_request: userRequest,
+      mode,
+    }),
+  startTask: (id: string, projectRoot: string) =>
+    request<void>('POST', `/agent/tasks/${encodeURIComponent(id)}/start`, {
+      project_root: projectRoot,
+    }),
+  pauseTask: (id: string) =>
+    request<void>('POST', `/agent/tasks/${encodeURIComponent(id)}/pause`),
+  resumeTask: (id: string) =>
+    request<void>('POST', `/agent/tasks/${encodeURIComponent(id)}/resume`),
+  stopTask: (id: string) =>
+    request<void>('POST', `/agent/tasks/${encodeURIComponent(id)}/stop`),
+  listTools: () => request<ToolInfo[]>('GET', '/agent/tools'),
+  getDefaultMode: () => request<ExecutionMode>('GET', '/agent/mode'),
+  setDefaultMode: (mode: ExecutionMode) =>
+    request<void>('PUT', '/agent/mode', { mode }),
+  /** SSE 端点 URL 构造器（供 EventSource 直连，复用 BASE 自动处理 Tauri/浏览器环境） */
+  taskStreamUrl: (id: string) =>
+    `${BASE}/agent/tasks/${encodeURIComponent(id)}/stream`,
 }
 
 /* ============================================================

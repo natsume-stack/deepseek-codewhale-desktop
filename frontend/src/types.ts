@@ -492,3 +492,112 @@ export interface McpServicesConfig {
   services: McpService[]
   globalEnabled: boolean
 }
+
+/* ============================================================
+ * Agent 自治任务模块
+ *
+ * 与后端 /api/agent/* 路由对齐，SSE 事件协议见
+ * GET /api/agent/tasks/:id/stream。
+ * ============================================================ */
+export type TaskState =
+  | 'pending'
+  | 'planning'
+  | 'acting'
+  | 'observing'
+  | 'reflecting'
+  | 'paused'
+  | 'awaiting_approval'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+
+export type ExecutionMode = 'autonomous' | 'approval'
+
+export type StepStatus = 'pending' | 'in_progress' | 'done' | 'skipped' | 'failed'
+
+export type ArtifactKind =
+  | 'file_change'
+  | 'diff_hunk'
+  | 'shell_output'
+  | 'git_commit'
+  | 'file_created'
+  | 'file_deleted'
+
+export interface ToolCall {
+  id: string
+  tool_name: string
+  arguments: Record<string, unknown>
+  expected_output?: string
+}
+
+export interface ToolArtifact {
+  kind: ArtifactKind
+  path?: string
+  diff_id?: string
+  summary: string
+}
+
+export interface ToolResult {
+  success: boolean
+  output: string
+  error?: string
+  artifacts: ToolArtifact[]
+}
+
+export interface ToolInfo {
+  name: string
+  description: string
+  schema: Record<string, unknown>
+  required_permission: PermissionLevel
+}
+
+export interface TaskStep {
+  id: string
+  description: string
+  status: StepStatus
+  tool_calls: ToolCall[]
+}
+
+export interface ReActStep {
+  iteration: number
+  thought: string
+  action: ToolCall | null
+  observation: string
+  reflection: string | null
+  timestamp: string
+}
+
+export interface Checkpoint {
+  iteration: number
+  step_index: number
+  saved_at: string
+}
+
+export interface AgentTask {
+  id: string
+  session_id: string
+  user_request: string
+  state: TaskState
+  mode: ExecutionMode
+  plan: TaskStep[]
+  current_step: number
+  history: ReActStep[]
+  max_iterations: number
+  current_iteration: number
+  checkpoint: Checkpoint | null
+  error: string | null
+  created_at: string
+  updated_at: string
+}
+
+/** SSE 事件联合类型（GET /api/agent/tasks/:id/stream） */
+export type AgentEvent =
+  | { type: 'task_state'; state: TaskState; iteration: number }
+  | { type: 'thought'; content: string }
+  | { type: 'tool_call'; call: ToolCall }
+  | { type: 'tool_result'; result: ToolResult }
+  | { type: 'reflection'; conclusion: string; next_action?: string }
+  | { type: 'plan_created'; steps: string[] }
+  | { type: 'task_complete'; summary: string }
+  | { type: 'task_error'; error: string; recoverable: boolean }
+  | { type: 'log'; level: string; message: string }

@@ -188,9 +188,8 @@ impl AppConfig {
             let text = fs::read_to_string(&path)
                 .map_err(|e| AppError::Config(format!("读取 {} 失败: {e}", path.display())))?;
             if !text.trim().is_empty() {
-                let file_cfg: AppConfig = toml::from_str(&text).map_err(|e| {
-                    AppError::Config(format!("解析 {} 失败: {e}", path.display()))
-                })?;
+                let file_cfg: AppConfig = toml::from_str(&text)
+                    .map_err(|e| AppError::Config(format!("解析 {} 失败: {e}", path.display())))?;
                 cfg = file_cfg;
             }
         }
@@ -267,7 +266,8 @@ impl AppConfig {
             }
         }
         if let Ok(v) = std::env::var("CODEWHALE_INFERENCE__CACHE_ENABLED") {
-            self.inference.cache_enabled = matches!(v.to_lowercase().as_str(), "1" | "true" | "yes");
+            self.inference.cache_enabled =
+                matches!(v.to_lowercase().as_str(), "1" | "true" | "yes");
         }
         if let Ok(v) = std::env::var("CODEWHALE_INFERENCE__CONTEXT_LENGTH") {
             if let Ok(n) = v.parse() {
@@ -283,8 +283,8 @@ impl AppConfig {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        let text =
-            toml::to_string_pretty(self).map_err(|e| AppError::Config(format!("序列化失败: {e}")))?;
+        let text = toml::to_string_pretty(self)
+            .map_err(|e| AppError::Config(format!("序列化失败: {e}")))?;
         let mut file = fs::File::create(&path)?;
         file.write_all(text.as_bytes())?;
         tracing::info!("配置已写入 {}", path.display());
@@ -292,7 +292,12 @@ impl AppConfig {
     }
 
     /// 仅更新 DeepSeek 配置并落盘。
-    pub fn update_deepseek(&mut self, api_key: Option<String>, base_url: Option<String>, model: Option<String>) -> AppResult<()> {
+    pub fn update_deepseek(
+        &mut self,
+        api_key: Option<String>,
+        base_url: Option<String>,
+        model: Option<String>,
+    ) -> AppResult<()> {
         if let Some(k) = api_key {
             self.deepseek.api_key = k;
         }
@@ -350,12 +355,12 @@ pub fn normalize_base_url(url: &str) -> String {
 
 /// 用于校验路径是否在允许的项目根目录下 (防止越权读写)。
 pub fn ensure_within(root: &Path, target: &Path) -> AppResult<PathBuf> {
-    let canonical_root = root.canonicalize().map_err(|e| {
-        AppError::BadRequest(format!("项目根目录无效: {}: {e}", root.display()))
-    })?;
-    let canonical_target = target.canonicalize().map_err(|e| {
-        AppError::BadRequest(format!("目标路径无效: {}: {e}", target.display()))
-    })?;
+    let canonical_root = root
+        .canonicalize()
+        .map_err(|e| AppError::BadRequest(format!("项目根目录无效: {}: {e}", root.display())))?;
+    let canonical_target = target
+        .canonicalize()
+        .map_err(|e| AppError::BadRequest(format!("目标路径无效: {}: {e}", target.display())))?;
     if !canonical_target.starts_with(&canonical_root) {
         return Err(AppError::BadRequest(format!(
             "路径越界: {} 不在项目根 {} 内",

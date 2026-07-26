@@ -217,10 +217,7 @@ pub async fn delete_skill(
         if perm.can_shell() {
             let _ = crate::tools::shell(
                 &root,
-                format!(
-                    "rm -rf \"{}\"",
-                    format!(".workspace/.skills/{}", id)
-                ),
+                format!("rm -rf \"{}\"", format!(".workspace/.skills/{}", id)),
                 10,
                 perm,
             )
@@ -401,7 +398,13 @@ pub async fn set_default_permission(
     // 简单校验：仅接受预定义权限等级
     let valid = matches!(
         body.permission.as_str(),
-        "ReadOnly" | "WorkspaceWrite" | "FullAccess" | "readOnly" | "workspaceWrite" | "fullAccess" | "ask"
+        "ReadOnly"
+            | "WorkspaceWrite"
+            | "FullAccess"
+            | "readOnly"
+            | "workspaceWrite"
+            | "fullAccess"
+            | "ask"
     );
     if !valid {
         return Err(AppError::BadRequest(format!(

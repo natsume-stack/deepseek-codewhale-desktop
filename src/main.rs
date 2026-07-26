@@ -3,6 +3,7 @@
 //! 启动本地 HTTP API 服务, 对外提供 REST + SSE 接口供 WinUI 前端调用。
 //! 配置加载优先级: config.toml > 环境变量 > 内置默认值。
 
+mod agent;
 mod cache;
 mod config;
 mod deepseek;
@@ -40,6 +41,8 @@ async fn main() -> anyhow::Result<()> {
     // 初始化内置 17 项标准 Skill + 12 项真实开源 MCP 插件配置（P0 Skill / P1 MCP 生态）
     state.skills.init_builtin().await;
     state.mcp.init_builtin().await;
+    // 注册 Agent 内置工具 (Agent A 提供 register_builtin_tools 真实实现后生效)
+    state.agent.register_builtin().await;
     tracing::info!("已加载内置 Skill 与 MCP 插件配置");
     let app = routes::build_router(state);
 

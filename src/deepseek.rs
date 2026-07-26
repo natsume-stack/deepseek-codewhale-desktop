@@ -114,13 +114,22 @@ pub struct ChatMessage {
 
 impl ChatMessage {
     pub fn system(content: impl Into<String>) -> Self {
-        Self { role: ChatRole::System, content: content.into() }
+        Self {
+            role: ChatRole::System,
+            content: content.into(),
+        }
     }
     pub fn user(content: impl Into<String>) -> Self {
-        Self { role: ChatRole::User, content: content.into() }
+        Self {
+            role: ChatRole::User,
+            content: content.into(),
+        }
     }
     pub fn assistant(content: impl Into<String>) -> Self {
-        Self { role: ChatRole::Assistant, content: content.into() }
+        Self {
+            role: ChatRole::Assistant,
+            content: content.into(),
+        }
     }
 }
 
@@ -239,7 +248,10 @@ impl DeepSeekClient {
         let status = resp.status();
         if !status.is_success() {
             let text = resp.text().await.unwrap_or_default();
-            return Err(AppError::DeepSeek { status: status.as_u16(), body: text });
+            return Err(AppError::DeepSeek {
+                status: status.as_u16(),
+                body: text,
+            });
         }
         Ok(())
     }
@@ -330,7 +342,11 @@ fn parse_sse_block(block: &str) -> Vec<AppResult<StreamDelta>> {
                     if content.is_none() && reasoning.is_none() && finish_reason.is_none() {
                         Vec::new()
                     } else {
-                        vec![Ok(StreamDelta { content, reasoning, finish_reason })]
+                        vec![Ok(StreamDelta {
+                            content,
+                            reasoning,
+                            finish_reason,
+                        })]
                     }
                 }
                 None => Vec::new(),

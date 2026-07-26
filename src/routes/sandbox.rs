@@ -133,14 +133,9 @@ pub async fn exec(
                 "exit_code={}\nstdout={}\nstderr={}",
                 sandbox.exit_code, sandbox.stdout, sandbox.stderr
             );
-            sandbox.fix_suggestion = generate_fix_suggestion(
-                &state.client,
-                &ds_cfg,
-                &lang,
-                &body.code,
-                &error_text,
-            )
-            .await;
+            sandbox.fix_suggestion =
+                generate_fix_suggestion(&state.client, &ds_cfg, &lang, &body.code, &error_text)
+                    .await;
         }
     }
 
@@ -202,8 +197,8 @@ struct TempWorkspace {
 
 impl TempWorkspace {
     fn new(prefix: &str) -> Result<Self, AppError> {
-        let dir = std::env::temp_dir()
-            .join(format!("{}_{}", prefix, uuid::Uuid::new_v4().simple()));
+        let dir =
+            std::env::temp_dir().join(format!("{}_{}", prefix, uuid::Uuid::new_v4().simple()));
         std::fs::create_dir_all(&dir)
             .map_err(|e| AppError::Tool(format!("创建临时目录失败: {e}")))?;
         Ok(Self { dir })

@@ -74,7 +74,10 @@ pub async fn register_diff(
     validate_within_root(&target, &root)?;
 
     // sessionId 缺省时归入 "default" 桶，便于前端在会话尚未建立时也能注册 Diff
-    let session_id = body.session_id.clone().unwrap_or_else(|| "default".to_string());
+    let session_id = body
+        .session_id
+        .clone()
+        .unwrap_or_else(|| "default".to_string());
     let id = format!(
         "diff_{}_{}",
         session_id,
@@ -109,7 +112,12 @@ pub async fn register_diff(
     let mut map = state.diffs.write().await;
     map.entry(session_id.clone()).or_default().push(entry);
 
-    tracing::info!("注册 Diff: id={}, file={}, session={}", id, body.file_path, session_id);
+    tracing::info!(
+        "注册 Diff: id={}, file={}, session={}",
+        id,
+        body.file_path,
+        session_id
+    );
     Ok((
         StatusCode::CREATED,
         Json(json!({
@@ -343,7 +351,10 @@ pub async fn apply_all_diffs(
         ));
     }
 
-    let session_id = body.session_id.clone().unwrap_or_else(|| "default".to_string());
+    let session_id = body
+        .session_id
+        .clone()
+        .unwrap_or_else(|| "default".to_string());
 
     let mut map = state.diffs.write().await;
     let entries = map
@@ -451,8 +462,7 @@ pub async fn apply_hunk_handler(
 
     // 克隆 hunk 并调整 old_start 以匹配磁盘当前内容
     let mut adjusted_hunk = hunks[hunk_index].clone();
-    adjusted_hunk.old_start =
-        ((adjusted_hunk.old_start as i64) + offset).max(1) as usize;
+    adjusted_hunk.old_start = ((adjusted_hunk.old_start as i64) + offset).max(1) as usize;
 
     // 读取磁盘当前文件内容
     let target = PathBuf::from(&file_path);

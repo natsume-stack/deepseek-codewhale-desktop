@@ -364,34 +364,24 @@ impl McpStore {
      * ============================================================ */
 
     /// 权限隔离检查
-    fn check_permission(
-        scope: &str,
-        tool: &str,
-        level: PermissionLevel,
-    ) -> Result<(), AppError> {
+    fn check_permission(scope: &str, tool: &str, level: PermissionLevel) -> Result<(), AppError> {
         match scope {
             "file" => {
                 // 文件类：继承三级权限，写操作需 can_write
                 if is_file_write_tool(tool) && !level.can_write() {
-                    return Err(AppError::Forbidden(
-                        "当前权限等级禁止文件写操作".into(),
-                    ));
+                    return Err(AppError::Forbidden("当前权限等级禁止文件写操作".into()));
                 }
             }
             "network" => {
                 // 网络类（知识库/云服务）：禁止访问本地文件系统
                 if is_file_tool(tool) {
-                    return Err(AppError::Forbidden(
-                        "网络类插件禁止访问本地文件系统".into(),
-                    ));
+                    return Err(AppError::Forbidden("网络类插件禁止访问本地文件系统".into()));
                 }
             }
             "shell" => {
                 // Shell 类：需 can_shell（FullAccess）
                 if !level.can_shell() {
-                    return Err(AppError::Forbidden(
-                        "当前权限等级禁止 Shell 操作".into(),
-                    ));
+                    return Err(AppError::Forbidden("当前权限等级禁止 Shell 操作".into()));
                 }
             }
             "database" | "security" => {
@@ -457,9 +447,7 @@ impl McpStore {
         });
         let line = serde_json::to_string(&rpc_req)
             .map_err(|e| AppError::Tool(format!("JSON 序列化失败: {e}")))?;
-        stdin
-            .write_all(format!("{line}\n").as_bytes())
-            .await?;
+        stdin.write_all(format!("{line}\n").as_bytes()).await?;
         stdin.flush().await?;
         drop(stdin); // 关闭 stdin 通知子进程
 
@@ -579,7 +567,10 @@ fn builtin_mcp_plugins() -> Vec<McpConfig> {
             false,
             "仓库/Issue/PR 读写",
             Some("npx".into()),
-            Some(vec!["-y".into(), "@modelcontextprotocol/server-github".into()]),
+            Some(vec![
+                "-y".into(),
+                "@modelcontextprotocol/server-github".into(),
+            ]),
             Some({
                 let mut m = HashMap::new();
                 m.insert("GITHUB_PERSONAL_ACCESS_TOKEN".into(), String::new());
@@ -596,7 +587,10 @@ fn builtin_mcp_plugins() -> Vec<McpConfig> {
             false,
             "文件读写/目录遍历",
             Some("npx".into()),
-            Some(vec!["-y".into(), "@modelcontextprotocol/server-filesystem".into()]),
+            Some(vec![
+                "-y".into(),
+                "@modelcontextprotocol/server-filesystem".into(),
+            ]),
             None,
             None,
         ),
@@ -609,7 +603,10 @@ fn builtin_mcp_plugins() -> Vec<McpConfig> {
             false,
             "知识图谱记忆存储",
             Some("npx".into()),
-            Some(vec!["-y".into(), "@modelcontextprotocol/server-memory".into()]),
+            Some(vec![
+                "-y".into(),
+                "@modelcontextprotocol/server-memory".into(),
+            ]),
             None,
             None,
         ),
@@ -622,7 +619,10 @@ fn builtin_mcp_plugins() -> Vec<McpConfig> {
             false,
             "浏览器自动化/截图/PDF",
             Some("npx".into()),
-            Some(vec!["-y".into(), "@modelcontextprotocol/server-puppeteer".into()]),
+            Some(vec![
+                "-y".into(),
+                "@modelcontextprotocol/server-puppeteer".into(),
+            ]),
             None,
             None,
         ),
@@ -635,7 +635,10 @@ fn builtin_mcp_plugins() -> Vec<McpConfig> {
             false,
             "网络搜索",
             Some("npx".into()),
-            Some(vec!["-y".into(), "@modelcontextprotocol/server-brave-search".into()]),
+            Some(vec![
+                "-y".into(),
+                "@modelcontextprotocol/server-brave-search".into(),
+            ]),
             Some({
                 let mut m = HashMap::new();
                 m.insert("BRAVE_API_KEY".into(), String::new());
@@ -652,7 +655,10 @@ fn builtin_mcp_plugins() -> Vec<McpConfig> {
             false,
             "HTTP 请求/网页抓取",
             Some("npx".into()),
-            Some(vec!["-y".into(), "@modelcontextprotocol/server-fetch".into()]),
+            Some(vec![
+                "-y".into(),
+                "@modelcontextprotocol/server-fetch".into(),
+            ]),
             None,
             None,
         ),
@@ -665,7 +671,10 @@ fn builtin_mcp_plugins() -> Vec<McpConfig> {
             false,
             "结构化思维链",
             Some("npx".into()),
-            Some(vec!["-y".into(), "@modelcontextprotocol/server-sequential-thinking".into()]),
+            Some(vec![
+                "-y".into(),
+                "@modelcontextprotocol/server-sequential-thinking".into(),
+            ]),
             None,
             None,
         ),
@@ -678,7 +687,10 @@ fn builtin_mcp_plugins() -> Vec<McpConfig> {
             true,
             "SQLite 数据库读写",
             Some("npx".into()),
-            Some(vec!["-y".into(), "@modelcontextprotocol/server-sqlite".into()]),
+            Some(vec![
+                "-y".into(),
+                "@modelcontextprotocol/server-sqlite".into(),
+            ]),
             None,
             None,
         ),
@@ -691,7 +703,10 @@ fn builtin_mcp_plugins() -> Vec<McpConfig> {
             false,
             "时间/时区查询",
             Some("npx".into()),
-            Some(vec!["-y".into(), "@modelcontextprotocol/server-time".into()]),
+            Some(vec![
+                "-y".into(),
+                "@modelcontextprotocol/server-time".into(),
+            ]),
             None,
             None,
         ),

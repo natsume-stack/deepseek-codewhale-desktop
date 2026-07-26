@@ -1,5 +1,6 @@
 //! 路由聚合: 注册所有 REST 端点 + CORS + 日志中间件。
 
+pub mod agent;
 pub mod approvals;
 pub mod chat;
 pub mod config_api;
@@ -65,16 +66,28 @@ pub fn build_router(state: SharedState) -> Router {
         .route("/diffs/:id/apply", post(diffs::apply_diff))
         .route("/diffs/:id/reject", post(diffs::reject_diff))
         .route("/diffs/:id/revert", post(diffs::revert_diff))
-        .route("/diffs/:id/hunks/:hunk_index/apply", post(diffs::apply_hunk_handler))
-        .route("/diffs/:id/hunks/:hunk_index/reject", post(diffs::reject_hunk_handler))
+        .route(
+            "/diffs/:id/hunks/:hunk_index/apply",
+            post(diffs::apply_hunk_handler),
+        )
+        .route(
+            "/diffs/:id/hunks/:hunk_index/reject",
+            post(diffs::reject_hunk_handler),
+        )
         .route("/diffs/:session_id", get(diffs::list_diffs))
         // 代办任务（P0-7）
         .route("/todos", get(todos::list_todos).post(todos::create_todo))
-        .route("/todos/:id", get(todos::get_todo).delete(todos::delete_todo))
+        .route(
+            "/todos/:id",
+            get(todos::get_todo).delete(todos::delete_todo),
+        )
         .route("/todos/:id/status", post(todos::update_todo_status))
         .route("/todos/session/:session_id", get(todos::list_session_todos))
         // Agent 操作审批（P0-8）
-        .route("/approvals", get(approvals::list_approvals).post(approvals::create_approval))
+        .route(
+            "/approvals",
+            get(approvals::list_approvals).post(approvals::create_approval),
+        )
         .route("/approvals/pending", get(approvals::list_pending))
         .route("/approvals/:id", get(approvals::get_approval))
         .route("/approvals/:id/decide", post(approvals::decide_approval))
@@ -105,7 +118,10 @@ pub fn build_router(state: SharedState) -> Router {
             "/config/profiles/:id",
             axum::routing::put(config_api::update_profile).delete(config_api::delete_profile),
         )
-        .route("/config/profiles/:id/active", post(config_api::set_active_profile))
+        .route(
+            "/config/profiles/:id/active",
+            post(config_api::set_active_profile),
+        )
         // RAG 卡片
         .route(
             "/config/rag",
@@ -114,16 +130,21 @@ pub fn build_router(state: SharedState) -> Router {
         // 格式化卡片
         .route(
             "/config/formatter",
-            get(config_api::get_formatter_config)
-                .put(config_api::set_formatter_config),
+            get(config_api::get_formatter_config).put(config_api::set_formatter_config),
         )
         // 缓存卡片
         .route(
             "/config/cache",
             get(config_api::get_cache_config).put(config_api::set_cache_config),
         )
-        .route("/config/cache/clear-session", post(config_api::clear_session_cache))
-        .route("/config/cache/clear-memory", post(config_api::clear_project_memory))
+        .route(
+            "/config/cache/clear-session",
+            post(config_api::clear_session_cache),
+        )
+        .route(
+            "/config/cache/clear-memory",
+            post(config_api::clear_project_memory),
+        )
         .route("/config/cache/stats", get(config_api::get_cache_stats))
         // 外观卡片
         .route(
@@ -147,7 +168,10 @@ pub fn build_router(state: SharedState) -> Router {
             get(config_api::export_audit_log),
         )
         // RAG 项目检索（P1）
-        .route("/rag/index", get(rag::get_index).post(rag::build_index_handler))
+        .route(
+            "/rag/index",
+            get(rag::get_index).post(rag::build_index_handler),
+        )
         .route("/rag/recall", post(rag::recall_handler))
         .route("/rag/clear", delete(rag::clear_index))
         // 代码沙箱执行（P1）
@@ -167,16 +191,31 @@ pub fn build_router(state: SharedState) -> Router {
         .route("/skills/config", get(skills::get_skills_config))
         .route("/skills/find", post(skills::find_skill))
         .route("/skills/import", post(skills::import_skill_pack))
-        .route("/skills/default-permission", post(skills::set_default_permission))
-        .route("/skills/agents-md", get(skills::get_agents_md).put(skills::update_agents_md))
-        .route("/skills", get(skills::list_skills).post(skills::create_skill))
-        .route("/skills/:id", get(skills::get_skill).delete(skills::delete_skill))
+        .route(
+            "/skills/default-permission",
+            post(skills::set_default_permission),
+        )
+        .route(
+            "/skills/agents-md",
+            get(skills::get_agents_md).put(skills::update_agents_md),
+        )
+        .route(
+            "/skills",
+            get(skills::list_skills).post(skills::create_skill),
+        )
+        .route(
+            "/skills/:id",
+            get(skills::get_skill).delete(skills::delete_skill),
+        )
         .route("/skills/:id/toggle", put(skills::toggle_skill))
         .route("/skills/:id/enabled", put(skills::set_skill_enabled))
         .route("/skills/:id/export", post(skills::export_skill))
         // MCP 插件生态（P1）
         // 静态路径优先：/mcp/services、/mcp/global-enabled、/mcp/high-risk/switch、/mcp/call 均在 /mcp/:id 之前。
-        .route("/mcp/services", get(mcp::list_mcp_services).post(mcp::add_mcp_service))
+        .route(
+            "/mcp/services",
+            get(mcp::list_mcp_services).post(mcp::add_mcp_service),
+        )
         .route("/mcp/global-enabled", post(mcp::set_mcp_global_enabled))
         .route(
             "/mcp/high-risk/switch",
@@ -190,7 +229,9 @@ pub fn build_router(state: SharedState) -> Router {
         .route("/mcp/:id/connect", post(mcp::connect_mcp))
         .route("/mcp/:id/disconnect", post(mcp::disconnect_mcp))
         // 顶层独立路由：模型档案列表（前端 modelProfilesApi.list）
-        .route("/model-profiles", get(config_api::list_model_profiles));
+        .route("/model-profiles", get(config_api::list_model_profiles))
+        // Agent 自治运行时 (P0): 任务管理 + SSE 事件流 + 工具列表 + 模式路由
+        .nest("/agent", agent::router());
 
     Router::new()
         .route("/ping", get(health::ping))

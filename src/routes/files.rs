@@ -46,9 +46,8 @@ pub async fn get_tree(
         .await
         .ok_or_else(|| AppError::BadRequest("尚未加载项目目录".into()))?;
 
-    let node = build_tree(&root, q.depth).map_err(|e| {
-        AppError::BadRequest(format!("读取文件树失败: {}: {e}", root.display()))
-    })?;
+    let node = build_tree(&root, q.depth)
+        .map_err(|e| AppError::BadRequest(format!("读取文件树失败: {}: {e}", root.display())))?;
 
     Ok(Json(json!({
         "root": root.display().to_string(),
@@ -140,9 +139,7 @@ pub async fn create_file(
     // 写操作权限闸门：需 can_write（WorkspaceWrite / FullAccess）
     let cfg = state.permission_config().await;
     if !cfg.level.can_write() {
-        return Err(AppError::Forbidden(
-            "当前权限等级禁止创建文件/目录".into(),
-        ));
+        return Err(AppError::Forbidden("当前权限等级禁止创建文件/目录".into()));
     }
 
     let parent = body
@@ -176,7 +173,11 @@ pub async fn create_file(
             .map_err(|e| AppError::BadRequest(format!("创建文件失败: {e}")))?;
     }
 
-    tracing::info!("已创建 {}: {}", if body.is_folder { "目录" } else { "文件" }, target.display());
+    tracing::info!(
+        "已创建 {}: {}",
+        if body.is_folder { "目录" } else { "文件" },
+        target.display()
+    );
 
     Ok((
         StatusCode::CREATED,
@@ -206,15 +207,16 @@ pub async fn delete_file(
     // 写操作权限闸门：删除视为高危写操作，需 can_write
     let cfg = state.permission_config().await;
     if !cfg.level.can_write() {
-        return Err(AppError::Forbidden(
-            "当前权限等级禁止删除文件/目录".into(),
-        ));
+        return Err(AppError::Forbidden("当前权限等级禁止删除文件/目录".into()));
     }
     let target = PathBuf::from(&q.path);
     validate_within_root(&target, &root)?;
 
     if !target.exists() {
-        return Err(AppError::BadRequest(format!("目标不存在: {}", target.display())));
+        return Err(AppError::BadRequest(format!(
+            "目标不存在: {}",
+            target.display()
+        )));
     }
 
     if target.is_dir() {
@@ -339,7 +341,10 @@ pub async fn read_file(
     validate_within_root(&target, &root)?;
 
     if !target.exists() {
-        return Err(AppError::BadRequest(format!("文件不存在: {}", target.display())));
+        return Err(AppError::BadRequest(format!(
+            "文件不存在: {}",
+            target.display()
+        )));
     }
     if target.is_dir() {
         return Err(AppError::BadRequest("目标是目录，无法读取".into()));
@@ -391,9 +396,7 @@ pub async fn write_file(
     // 写操作权限闸门：写入视为写操作，需 can_write
     let cfg = state.permission_config().await;
     if !cfg.level.can_write() {
-        return Err(AppError::Forbidden(
-            "当前权限等级禁止写入文件".into(),
-        ));
+        return Err(AppError::Forbidden("当前权限等级禁止写入文件".into()));
     }
     let target = PathBuf::from(&body.path);
     validate_within_root(&target, &root)?;

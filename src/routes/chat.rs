@@ -136,7 +136,8 @@ Plan 模式职责：
         // Plan 模式下 write_file/edit_file/shell 的 required_permission 会被系统提示阻止
         // 后端额外校验：在 execute_dsml_tool 中检查 mode 标记
     } else {
-        system_prefix.push_str(r#"
+        system_prefix.push_str(
+            r#"
 
 # 当前 Agent 模式：Act（执行模式）
 你当前处于 Act 模式，可以调用所有工具（受当前权限等级限制）。
@@ -144,13 +145,20 @@ Act 模式职责：
 1. 基于 Plan（若有）执行实际修改
 2. 优先使用 edit_file 增量编辑而非 write_file 整文件重写
 3. 修改完成后用 attempt_completion 收尾，说明变更内容
-"#);
+"#,
+        );
     }
     let is_plan_mode_for_loop = is_plan_mode;
 
     // 在 SharedState.caches 中登记（用于跨会话查询/统计），同时初始化 session.cache
-    let _ = state.caches.get_or_init(&session_id, system_prefix.clone()).await;
-    state.sessions.ensure_cache(&session_id, system_prefix.clone()).await?;
+    let _ = state
+        .caches
+        .get_or_init(&session_id, system_prefix.clone())
+        .await;
+    state
+        .sessions
+        .ensure_cache(&session_id, system_prefix.clone())
+        .await?;
 
     // P0-1+: 将当前项目根目录、Git 分支、git status、最近修改文件注入第二层 project_memory。
     //   - 增强内容：项目根 + Git 分支 + git status 摘要 + 最近 5 条 commit + 最近修改文件
@@ -162,12 +170,22 @@ Act 模式职责：
         // 并行读取 git 信息（任一失败不影响其他）
         let branch_info = match crate::tools::git(
             root,
-            vec!["rev-parse".to_string(), "--abbrev-ref".to_string(), "HEAD".to_string()],
+            vec![
+                "rev-parse".to_string(),
+                "--abbrev-ref".to_string(),
+                "HEAD".to_string(),
+            ],
             perm_cfg.level,
-        ).await {
+        )
+        .await
+        {
             Ok(r) if r.success => {
                 let b = r.stdout.trim().to_string();
-                if b.is_empty() || b == "HEAD" { "(detached)".to_string() } else { b }
+                if b.is_empty() || b == "HEAD" {
+                    "(detached)".to_string()
+                } else {
+                    b
+                }
             }
             _ => "(unknown)".to_string(),
         };
@@ -176,31 +194,56 @@ Act 模式职责：
             root,
             vec!["status".to_string(), "--short".to_string()],
             perm_cfg.level,
-        ).await {
+        )
+        .await
+        {
             Ok(r) if r.success => {
                 let s = r.stdout.trim();
-                if s.is_empty() { "工作区干净".to_string() } else { s.to_string() }
+                if s.is_empty() {
+                    "工作区干净".to_string()
+                } else {
+                    s.to_string()
+                }
             }
             _ => "(unknown)".to_string(),
         };
 
         let recent_commits = match crate::tools::git(
             root,
-            vec!["log".to_string(), "--oneline".to_string(), "-n".to_string(), "5".to_string()],
+            vec![
+                "log".to_string(),
+                "--oneline".to_string(),
+                "-n".to_string(),
+                "5".to_string(),
+            ],
             perm_cfg.level,
-        ).await {
+        )
+        .await
+        {
             Ok(r) if r.success => r.stdout.trim().to_string(),
             _ => "(unknown)".to_string(),
         };
 
         let recent_files = match crate::tools::git(
             root,
-            vec!["log".to_string(), "--name-only".to_string(), "--pretty=format:".to_string(), "-n".to_string(), "10".to_string()],
+            vec![
+                "log".to_string(),
+                "--name-only".to_string(),
+                "--pretty=format:".to_string(),
+                "-n".to_string(),
+                "10".to_string(),
+            ],
             perm_cfg.level,
-        ).await {
+        )
+        .await
+        {
             Ok(r) if r.success => {
                 let s = r.stdout.trim();
-                if s.is_empty() { "(无)".to_string() } else { s.to_string() }
+                if s.is_empty() {
+                    "(无)".to_string()
+                } else {
+                    s.to_string()
+                }
             }
             _ => "(unknown)".to_string(),
         };
@@ -210,7 +253,11 @@ Act 模式职责：
         );
 
         // 显式处理错误：失败时记录日志并兜底追加到 system_prefix
-        if let Err(e) = state.sessions.init_project_memory(&session_id, memory.clone()).await {
+        if let Err(e) = state
+            .sessions
+            .init_project_memory(&session_id, memory.clone())
+            .await
+        {
             tracing::warn!("注入 project_memory 失败 (session={}): {e}", session_id);
             // 兜底：把 memory 追加到 system_prefix（虽然破坏字节稳定，但保证 AI 看到项目信息）
             // 注意：此时 system_prefix 已被 ensure_cache 使用，需要重新 init cache
@@ -218,7 +265,10 @@ Act 模式职责：
             let mut new_prefix = system_prefix.clone();
             new_prefix.push_str("\n\n[PROJECT_MEMORY]\n");
             new_prefix.push_str(&memory);
-            let _ = state.caches.get_or_init(&session_id, new_prefix.clone()).await;
+            let _ = state
+                .caches
+                .get_or_init(&session_id, new_prefix.clone())
+                .await;
             let _ = state.sessions.ensure_cache(&session_id, new_prefix).await;
         }
     }
@@ -235,7 +285,11 @@ Act 模式职责：
                             // 单文件超 50KB 或二进制时 mount_file 会返回错误，仅告警不中断
                             if let Err(e) = state
                                 .sessions
-                                .mount_file(&session_id, result.path.clone(), result.content.clone())
+                                .mount_file(
+                                    &session_id,
+                                    result.path.clone(),
+                                    result.content.clone(),
+                                )
                                 .await
                             {
                                 tracing::warn!("挂载附件到缓存失败 {}: {e}", rel);
@@ -285,7 +339,14 @@ Act 模式职责：
 
     // cache 已存在并初始化时，system_prefix 由 cache 提供，传入 None 走旧路径回退
     let snapshot_system = match state.sessions.get(&session_id).await {
-        Some(ref s) if s.cache.as_ref().map(|c| !c.system_prefix.is_empty()).unwrap_or(false) => None,
+        Some(ref s)
+            if s.cache
+                .as_ref()
+                .map(|c| !c.system_prefix.is_empty())
+                .unwrap_or(false) =>
+        {
+            None
+        }
         _ => Some(system_prefix),
     };
     let mut messages = state
@@ -343,10 +404,7 @@ Act 模式职责：
         Ok(r) => r,
         Err(e) => {
             // 清理: 释放 running 状态
-            let _ = state
-                .sessions
-                .finish_turn(&session_id, String::new())
-                .await;
+            let _ = state.sessions.finish_turn(&session_id, String::new()).await;
             return Err(e);
         }
     };
@@ -356,14 +414,15 @@ Act 模式职责：
 
     // P0 Skill 生态：在 DeepSeek 流之前推送 skill_match 事件与技能 todos（一次性）
     if let Some(m) = skill_match_info {
-        let ev = Event::default()
-            .event("skill_match")
-            .data(json!({
+        let ev = Event::default().event("skill_match").data(
+            json!({
                 "skillId": m.skill_id,
                 "skillName": m.skill_name,
                 "score": m.score,
                 "matchedKeywords": m.matched_keywords,
-            }).to_string());
+            })
+            .to_string(),
+        );
         let _ = tx_sse.send(ev).await;
     }
     if let Some(items) = skill_todos_pushed {
@@ -404,7 +463,14 @@ Act 模式职责：
             if turn > 1 {
                 // 重新构造消息快照（包含上一轮 tool_result 作为新的 current_message）
                 let snapshot_system = match sessions.get(&sid).await {
-                    Some(ref s) if s.cache.as_ref().map(|c| !c.system_prefix.is_empty()).unwrap_or(false) => None,
+                    Some(ref s)
+                        if s.cache
+                            .as_ref()
+                            .map(|c| !c.system_prefix.is_empty())
+                            .unwrap_or(false) =>
+                    {
+                        None
+                    }
                     _ => None,
                 };
                 let mut new_messages = match sessions
@@ -413,7 +479,8 @@ Act 模式职责：
                 {
                     Ok(m) => m,
                     Err(e) => {
-                        let ev = Event::default().event("error")
+                        let ev = Event::default()
+                            .event("error")
                             .data(json!({ "message": format!("消息快照失败: {e}") }).to_string());
                         let _ = tx_sse.send(ev).await;
                         break;
@@ -429,11 +496,16 @@ Act 模式职责：
                     temperature: temperature_for_loop,
                 };
                 let _ = new_messages; // 抑制未使用警告
-                let new_rx = match shared_state_for_loop.client.chat_stream(chat_req, &ds_cfg_for_loop, cancel_for_task.clone()).await {
+                let new_rx = match shared_state_for_loop
+                    .client
+                    .chat_stream(chat_req, &ds_cfg_for_loop, cancel_for_task.clone())
+                    .await
+                {
                     Ok(r) => r,
                     Err(e) => {
-                        let ev = Event::default().event("error")
-                            .data(json!({ "message": format!("DeepSeek 调用失败: {e}") }).to_string());
+                        let ev = Event::default().event("error").data(
+                            json!({ "message": format!("DeepSeek 调用失败: {e}") }).to_string(),
+                        );
                         let _ = tx_sse.send(ev).await;
                         break;
                     }
@@ -447,7 +519,8 @@ Act 模式职责：
                         Some(Ok(delta)) => {
                             if let Some(c) = delta.content.as_deref() {
                                 content_acc.push_str(c);
-                                let ev = Event::default().event("delta")
+                                let ev = Event::default()
+                                    .event("delta")
                                     .data(json!({ "content": c }).to_string());
                                 if tx_sse.send(ev).await.is_err() {
                                     cancel_for_task.cancel();
@@ -455,16 +528,19 @@ Act 模式职责：
                                 }
                                 if !todos_pushed {
                                     if let Some(texts) = parse_todo_block(&content_acc) {
-                                        let items = todos_store.add_batch(Some(sid.clone()), texts).await;
+                                        let items =
+                                            todos_store.add_batch(Some(sid.clone()), texts).await;
                                         todos_pushed = true;
-                                        let ev = Event::default().event("todos")
+                                        let ev = Event::default()
+                                            .event("todos")
                                             .data(json!({ "items": items }).to_string());
                                         let _ = tx_sse.send(ev).await;
                                     }
                                 }
                             }
                             if let Some(r) = delta.reasoning.as_deref() {
-                                let ev = Event::default().event("reasoning")
+                                let ev = Event::default()
+                                    .event("reasoning")
                                     .data(json!({ "content": r }).to_string());
                                 let _ = tx_sse.send(ev).await;
                             }
@@ -473,7 +549,8 @@ Act 模式职责：
                             }
                         }
                         Some(Err(e)) => {
-                            let ev = Event::default().event("error")
+                            let ev = Event::default()
+                                .event("error")
                                 .data(json!({ "message": e.to_string() }).to_string());
                             let _ = tx_sse.send(ev).await;
                             content_acc.clear();
@@ -501,9 +578,8 @@ Act 模式职责：
                                 }
                                 if !todos_pushed {
                                     if let Some(texts) = parse_todo_block(&content_acc) {
-                                        let items = todos_store
-                                            .add_batch(Some(sid.clone()), texts)
-                                            .await;
+                                        let items =
+                                            todos_store.add_batch(Some(sid.clone()), texts).await;
                                         todos_pushed = true;
                                         let ev = Event::default()
                                             .event("todos")
@@ -549,24 +625,31 @@ Act 模式职责：
 
             // 落地本轮 assistant 消息
             if !content_acc.is_empty() {
-                let _ = sessions.push_assistant_message(&sid, content_acc.clone()).await;
+                let _ = sessions
+                    .push_assistant_message(&sid, content_acc.clone())
+                    .await;
 
                 // === 解析 <todo> 块，推送 todos 事件给前端代办面板 ===
                 if let Some(items) = parse_todo_block(&content_acc) {
                     let sid_short: String = sid.chars().take(8).collect();
-                    let todo_items: Vec<serde_json::Value> = items.iter().enumerate().map(|(i, text)| {
-                        json!({
-                            "id": format!("todo_{}_{}", sid_short, i),
-                            "sessionId": sid,
-                            "text": text,
-                            "status": "pending",
-                            "source": "agent",
-                            "createdAt": chrono::Utc::now().to_rfc3339(),
-                            "updatedAt": chrono::Utc::now().to_rfc3339(),
+                    let todo_items: Vec<serde_json::Value> = items
+                        .iter()
+                        .enumerate()
+                        .map(|(i, text)| {
+                            json!({
+                                "id": format!("todo_{}_{}", sid_short, i),
+                                "sessionId": sid,
+                                "text": text,
+                                "status": "pending",
+                                "source": "agent",
+                                "createdAt": chrono::Utc::now().to_rfc3339(),
+                                "updatedAt": chrono::Utc::now().to_rfc3339(),
+                            })
                         })
-                    }).collect();
+                        .collect();
                     if !todo_items.is_empty() {
-                        let ev = Event::default().event("todos")
+                        let ev = Event::default()
+                            .event("todos")
                             .data(json!({ "items": todo_items }).to_string());
                         let _ = tx_sse.send(ev).await;
                         // 同时落库（todos store）
@@ -584,38 +667,49 @@ Act 模式职责：
                     // 执行每个工具调用（本轮最多执行第一个，避免并发问题）
                     if let Some(call) = tool_calls.into_iter().next() {
                         // 生成 callId 供前端配对 tool_call ↔ tool_result
-                        let call_id = format!("tc_{}_{}", turn, chrono::Utc::now().timestamp_millis() % 1_000_000);
+                        let call_id = format!(
+                            "tc_{}_{}",
+                            turn,
+                            chrono::Utc::now().timestamp_millis() % 1_000_000
+                        );
 
                         // attempt_completion 直接退出 loop
                         if call.name == "attempt_completion" {
                             need_loop = false;
-                            let result_val = call.arguments.get("result")
+                            let result_val = call
+                                .arguments
+                                .get("result")
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("")
                                 .to_string();
                             // 推送 tool_call 事件（让前端展示收尾卡片）
-                            let ev_call = Event::default().event("tool_call")
-                                .data(json!({
+                            let ev_call = Event::default().event("tool_call").data(
+                                json!({
                                     "callId": call_id,
                                     "name": call.name,
                                     "intent": call.intent,
                                     "requiredPermission": call.required_permission,
                                     "args": call.arguments,
-                                }).to_string());
+                                })
+                                .to_string(),
+                            );
                             let _ = tx_sse.send(ev_call).await;
-                            let ev = Event::default().event("attempt_completion")
-                                .data(json!({ "result": result_val, "callId": call_id }).to_string());
+                            let ev = Event::default().event("attempt_completion").data(
+                                json!({ "result": result_val, "callId": call_id }).to_string(),
+                            );
                             let _ = tx_sse.send(ev).await;
                         } else {
                             // 推送 tool_call 事件给前端（运行中状态）
-                            let ev_call = Event::default().event("tool_call")
-                                .data(json!({
+                            let ev_call = Event::default().event("tool_call").data(
+                                json!({
                                     "callId": call_id,
                                     "name": call.name,
                                     "intent": call.intent,
                                     "requiredPermission": call.required_permission,
                                     "args": call.arguments,
-                                }).to_string());
+                                })
+                                .to_string(),
+                            );
                             let _ = tx_sse.send(ev_call).await;
 
                             // 执行工具
@@ -624,16 +718,19 @@ Act 模式职责：
                                 &call,
                                 &sid,
                                 force_readonly_for_loop,
-                            ).await;
+                            )
+                            .await;
 
                             // 推送 tool_result 事件（带 callId 供前端配对）
-                            let ev = Event::default().event("tool_result")
-                                .data(json!({
+                            let ev = Event::default().event("tool_result").data(
+                                json!({
                                     "callId": call_id,
                                     "name": call.name,
                                     "success": success,
                                     "result": result_str,
-                                }).to_string());
+                                })
+                                .to_string(),
+                            );
                             let _ = tx_sse.send(ev).await;
 
                             // 把 tool_result 作为新的 user 消息回灌（进入第 5 层 current_message）
@@ -670,8 +767,9 @@ Act 模式职责：
                         cancel_for_task = new_cancel;
                     }
                     Err(e) => {
-                        let ev = Event::default().event("error")
-                            .data(json!({ "message": format!("start_turn 失败: {e}") }).to_string());
+                        let ev = Event::default().event("error").data(
+                            json!({ "message": format!("start_turn 失败: {e}") }).to_string(),
+                        );
                         let _ = tx_sse.send(ev).await;
                         break;
                     }
@@ -690,9 +788,8 @@ Act 模式职责：
 
         // Reasonix P0+: 推送 cache_stats 事件（命中率/命中数/未命中数）
         if let Ok(stats) = sessions.get_cache_stats(&sid).await {
-            let ev = Event::default()
-                .event("cache_stats")
-                .data(json!({
+            let ev = Event::default().event("cache_stats").data(
+                json!({
                     "hitRate": stats.hit_rate,
                     "hits": stats.hit_count,
                     "misses": stats.miss_count,
@@ -700,12 +797,18 @@ Act 模式职责：
                     "historyLen": stats.history_len,
                     "mountedFiles": stats.mounted_files,
                     "verified": stats.verified,
-                }).to_string());
+                })
+                .to_string(),
+            );
             let _ = tx_sse.send(ev).await;
         }
 
         // 抑制未使用警告
-        let _ = (&approvals_store, &inference_for_loop, &reasoning_effort_for_loop);
+        let _ = (
+            &approvals_store,
+            &inference_for_loop,
+            &reasoning_effort_for_loop,
+        );
     });
 
     // 9. SSE 响应流

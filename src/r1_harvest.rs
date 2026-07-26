@@ -85,7 +85,11 @@ fn harvest_json_fenced(reasoning: &str) -> Vec<HarvestedTool> {
                 let raw_json = &after[..end];
                 let raw_text = format!("```tool\n{}\n```", raw_json);
                 if let Ok(v) = serde_json::from_str::<Value>(raw_json.trim()) {
-                    if let Some(name) = v.get("name").and_then(|x| x.as_str()).map(|s| s.to_string()) {
+                    if let Some(name) = v
+                        .get("name")
+                        .and_then(|x| x.as_str())
+                        .map(|s| s.to_string())
+                    {
                         let args = v.get("arguments").cloned().unwrap_or(json!({}));
                         out.push(HarvestedTool {
                             name,
