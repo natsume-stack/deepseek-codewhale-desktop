@@ -12,6 +12,13 @@
 //!   GET    /api/agent/tools              列出已注册工具
 //!   GET    /api/agent/mode               读取全局默认模式
 //!   PUT    /api/agent/mode               设置全局默认模式
+//!   POST   /api/agent/terminal/sessions                    创建持久终端会话
+//!   GET    /api/agent/terminal/sessions                    列出所有会话
+//!   POST   /api/agent/terminal/sessions/:id/exec           在会话中执行命令
+//!   GET    /api/agent/terminal/sessions/:id/stream         SSE 订阅会话输出
+//!   DELETE /api/agent/terminal/sessions/:id                关闭会话
+//!   GET    /api/agent/mcp/tools                            列出 MCP 桥接工具
+//!   POST   /api/agent/mcp/call                              调用 MCP 工具
 //!
 //! SSE 事件格式 (与 chat.rs 风格一致):
 //!   event: task_state    data: {"state":"acting","iteration":3}
@@ -27,7 +34,7 @@
 use axum::extract::{Path as AxumPath, Query, State};
 use axum::http::StatusCode;
 use axum::response::sse::{Event, KeepAlive, Sse};
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use axum::Json;
 use axum::Router;
 use futures_util::Stream;
@@ -38,7 +45,10 @@ use uuid::Uuid;
 
 use crate::agent::react_engine::AgentEvent;
 use crate::agent::state_machine::ExecutionMode;
+use crate::agent::tools::global_shell_manager;
+use crate::config::PermissionLevel;
 use crate::error::AppError;
+use crate::mcp::McpCallRequest;
 use crate::state::SharedState;
 
 // ============================================================
@@ -85,6 +95,55 @@ pub struct DefaultModeResponse {
     pub mode: ExecutionMode,
 }
 
+// ----- 终端会话 -----
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateTerminalSessionBody {
+    pub project_root: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalSessionResponse {
+    pub session_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExecTerminalSessionBody {
+    pub command: String,
+    pub timeout_secs: Option<u64>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExecTerminalSessionResponse {
+    pub output: String,
+    pub cwd: String,
+}
+
+// ----- MCP 调用 -----
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpCallBody {
+    pub plugin_id: String,
+    pub tool_name: String,
+    pub arguments: Value,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpToolInfo {
+    pub plugin_id: String,
+    pub tool_name: String,
+    pub full_name: String,
+    pub description: String,
+    pub schema: Value,
+    pub enabled: bool,
+}
+
 // ============================================================
 // 路由注册
 // ============================================================
@@ -101,6 +160,20 @@ pub fn router() -> Router<SharedState> {
         .route("/tasks/:id/stream", get(stream_task))
         .route("/tools", get(list_tools))
         .route("/mode", get(get_mode).put(set_mode))
+        // 持久终端会话管理 (供前端 xterm.js 使用)
+        .route(
+            "/terminal/sessions",
+            post(create_terminal_session).get(list_terminal_sessions),
+        )
+        .route("/terminal/sessions/:id/exec", post(exec_terminal_session))
+        .route(
+            "/terminal/sessions/:id/stream",
+            get(stream_terminal_session),
+        )
+        .route("/terminal/sessions/:id", delete(close_terminal_session))
+        // MCP 工具透传调用
+        .route("/mcp/tools", get(list_mcp_tools))
+        .route("/mcp/call", post(call_mcp_tool))
 }
 
 // ============================================================
@@ -324,6 +397,208 @@ pub async fn set_mode(State(state): State<SharedState>, Json(body): Json<ModeBod
     };
     state.agent.set_default_mode(mode).await;
     Json(json!({ "mode": mode }))
+}
+
+// ============================================================
+// 持久终端会话端点 (供前端 xterm.js 使用)
+// ============================================================
+
+/// POST /api/agent/terminal/sessions - 创建持久终端会话。
+///
+/// 复用全局 `ShellSessionManager` 单例 (与 Agent 工具共享),
+/// 确保前端 xterm.js 与 Agent 可访问同一会话。
+pub async fn create_terminal_session(
+    Json(body): Json<CreateTerminalSessionBody>,
+) -> Result<(StatusCode, Json<TerminalSessionResponse>), AppError> {
+    let project_root = std::path::PathBuf::from(&body.project_root);
+    if !project_root.exists() {
+        return Err(AppError::BadRequest(format!(
+            "project_root 不存在: {}",
+            body.project_root
+        )));
+    }
+    let manager = global_shell_manager();
+    let id = manager
+        .create_session(project_root)
+        .await
+        .map_err(|e| AppError::Tool(format!("创建终端会话失败: {e}")))?;
+    tracing::info!("创建持久终端会话: id={}", id);
+    Ok((
+        StatusCode::CREATED,
+        Json(TerminalSessionResponse {
+            session_id: id.to_string(),
+        }),
+    ))
+}
+
+/// GET /api/agent/terminal/sessions - 列出所有会话 ID。
+pub async fn list_terminal_sessions() -> Json<Value> {
+    let manager = global_shell_manager();
+    let ids: Vec<String> = manager
+        .list_sessions()
+        .into_iter()
+        .map(|u| u.to_string())
+        .collect();
+    let total = ids.len();
+    Json(json!({ "sessions": ids, "total": total }))
+}
+
+/// POST /api/agent/terminal/sessions/:id/exec - 在会话中执行命令 (同步返回输出)。
+pub async fn exec_terminal_session(
+    AxumPath(id): AxumPath<String>,
+    Json(body): Json<ExecTerminalSessionBody>,
+) -> Result<Json<ExecTerminalSessionResponse>, AppError> {
+    let uuid = parse_uuid(&id)?;
+    let manager = global_shell_manager();
+    let shell = manager
+        .get_session(uuid)
+        .ok_or_else(|| AppError::BadRequest(format!("会话不存在: {id}")))?;
+    let timeout = body.timeout_secs.unwrap_or(60);
+    let output = shell
+        .exec(&body.command, timeout)
+        .await
+        .map_err(|e| AppError::Tool(format!("命令执行失败: {e}")))?;
+    let cwd = shell.cwd().display().to_string();
+    Ok(Json(ExecTerminalSessionResponse { output, cwd }))
+}
+
+/// GET /api/agent/terminal/sessions/:id/stream - SSE 实时订阅会话输出。
+///
+/// 客户端断开后流自动结束。每个输出行作为 `terminal_output` 事件推送;
+/// 会话关闭时推送 `terminal_closed` 事件并结束流。
+pub async fn stream_terminal_session(
+    AxumPath(id): AxumPath<String>,
+) -> Result<Sse<impl Stream<Item = Result<Event, io::Error>> + Send>, AppError> {
+    let uuid = parse_uuid(&id)?;
+    let manager = global_shell_manager();
+    let shell = manager
+        .get_session(uuid)
+        .ok_or_else(|| AppError::BadRequest(format!("会话不存在: {id}")))?;
+    let mut rx = shell.subscribe();
+    let session_id = id.clone();
+
+    let stream = async_stream::stream! {
+        loop {
+            match rx.recv().await {
+                Ok(line) => {
+                    yield Ok::<Event, io::Error>(
+                        Event::default()
+                            .event("terminal_output")
+                            .data(json!({ "line": line }).to_string()),
+                    );
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                    yield Ok::<Event, io::Error>(
+                        Event::default()
+                            .event("terminal_closed")
+                            .data(json!({ "sessionId": session_id }).to_string()),
+                    );
+                    break;
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                    yield Ok::<Event, io::Error>(
+                        Event::default()
+                            .event("lagged")
+                            .data(json!({ "skipped": n }).to_string()),
+                    );
+                }
+            }
+        }
+    };
+
+    Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
+}
+
+/// DELETE /api/agent/terminal/sessions/:id - 关闭会话。
+pub async fn close_terminal_session(
+    AxumPath(id): AxumPath<String>,
+) -> Result<Json<Value>, AppError> {
+    let uuid = parse_uuid(&id)?;
+    let manager = global_shell_manager();
+    manager.close_session(uuid).await;
+    tracing::info!("关闭持久终端会话: id={}", id);
+    Ok(Json(json!({ "sessionId": id, "closed": true })))
+}
+
+// ============================================================
+// MCP 工具透传端点
+// ============================================================
+
+/// GET /api/agent/mcp/tools - 列出所有 MCP 桥接工具。
+///
+/// 阶段1 实现:由于 McpStore 未持久化每个插件的工具清单 (需调用 tools/list),
+/// 这里返回所有已启用插件的元信息,前端可据此调用 /api/agent/mcp/call 透传。
+pub async fn list_mcp_tools(State(state): State<SharedState>) -> Json<Value> {
+    let metas = state.mcp.list_metas().await;
+    let tools: Vec<McpToolInfo> = metas
+        .into_iter()
+        .filter(|m| m.enabled)
+        .map(|m| McpToolInfo {
+            plugin_id: m.id.clone(),
+            tool_name: "*".into(),
+            full_name: format!("mcp.{}.*", m.id),
+            description: m.description,
+            schema: json!({
+                "type": "object",
+                "description": format!("透传调用 {} 插件任意工具", m.id)
+            }),
+            enabled: m.enabled,
+        })
+        .collect();
+    let total = tools.len();
+    Json(json!({ "tools": tools, "total": total }))
+}
+
+/// POST /api/agent/mcp/call - 调用 MCP 工具 (透传到 McpStore)。
+pub async fn call_mcp_tool(
+    State(state): State<SharedState>,
+    Json(body): Json<McpCallBody>,
+) -> Result<Json<Value>, AppError> {
+    if body.plugin_id.trim().is_empty() {
+        return Err(AppError::BadRequest("plugin_id 不能为空".into()));
+    }
+    if body.tool_name.trim().is_empty() {
+        return Err(AppError::BadRequest("tool_name 不能为空".into()));
+    }
+
+    // 读取当前权限等级,保证至少 WorkspaceWrite (MCP 内部按 permission_scope 二次校验)
+    let level = state.permission_config().await.level;
+    let level = if level.can_shell() {
+        level
+    } else {
+        PermissionLevel::WorkspaceWrite
+    };
+
+    let req = McpCallRequest {
+        plugin_id: body.plugin_id.clone(),
+        tool: body.tool_name.clone(),
+        arguments: body.arguments,
+        session_id: None,
+    };
+
+    let result = state
+        .mcp
+        .call(req, level)
+        .await
+        .map_err(|e| AppError::Tool(format!("MCP 调用失败: {e}")))?;
+
+    tracing::info!(
+        "MCP 调用: plugin={}, tool={}, success={}, duration_ms={}",
+        body.plugin_id,
+        body.tool_name,
+        result.success,
+        result.duration_ms
+    );
+
+    Ok(Json(json!({
+        "result": {
+            "success": result.success,
+            "data": result.data,
+            "error": result.error,
+            "durationMs": result.duration_ms,
+            "summary": result.summary,
+        }
+    })))
 }
 
 // ============================================================

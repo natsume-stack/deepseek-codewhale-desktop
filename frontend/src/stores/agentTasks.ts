@@ -26,7 +26,10 @@ import type {
   AgentEvent,
   AgentTask,
   ExecutionMode,
+  GlobalPlan,
+  ReflectionResult,
   ReActStep,
+  SandboxAlert,
   TaskState,
   ToolInfo,
 } from '../types'
@@ -40,6 +43,10 @@ interface AgentTasksState {
   isStreaming: boolean
   /** 当前任务的事件流（最多保留 200 条） */
   eventLog: AgentEvent[]
+  /** 当前待处理的高危操作告警（SandboxAlert），由 sandbox_alert 事件推送 */
+  sandboxAlert: SandboxAlert | null
+  /** 最近一次死循环检测结果（loop_detected 事件） */
+  loopPattern: string | null
 
   // Actions
   fetchTasks: (sessionId?: string) => Promise<void>
@@ -56,6 +63,8 @@ interface AgentTasksState {
   subscribeToTask: (id: string) => () => void
   clearEventLog: () => void
   selectTask: (id: string | null) => void
+  /** 关闭当前 sandbox 告警弹窗 */
+  dismissSandboxAlert: () => void
 }
 
 /** 当前活跃的 EventSource 取消订阅器（模块级，避免在接口中暴露内部字段） */
@@ -109,6 +118,8 @@ export const useAgentTasksStore = create<AgentTasksState>((set, get) => ({
   defaultMode: 'autonomous',
   isStreaming: false,
   eventLog: [],
+  sandboxAlert: null,
+  loopPattern: null,
 
   fetchTasks: async (sessionId) => {
     try {
@@ -317,6 +328,84 @@ export const useAgentTasksStore = create<AgentTasksState>((set, get) => ({
       pushEvent({ type: 'log', level: d.level, message: d.message })
     })
 
+    // GlobalPlan 创建（任务启动时由 GlobalPlanner 生成）
+    es.addEventListener('global_plan_created', (e: MessageEvent) => {
+      const d = parseData<{ plan: GlobalPlan }>(e.data)
+      if (!d) return
+      pushEvent({ type: 'global_plan_created', plan: d.plan })
+      patchCurrent(() => ({ global_plan: d.plan }))
+    })
+
+    // GlobalPlan 步骤状态变更
+    es.addEventListener('plan_step_changed', (e: MessageEvent) => {
+      const d = parseData<{ step_index: number; status: string; goal: string }>(e.data)
+      if (!d) return
+      pushEvent({
+        type: 'plan_step_changed',
+        step_index: d.step_index,
+        status: d.status,
+        goal: d.goal,
+      })
+      // 同步更新 currentTask.global_plan 中对应步骤状态
+      patchCurrent(() => {
+        const prev = get().currentTask?.global_plan
+        if (!prev) return {}
+        const steps = prev.steps.map((s) =>
+          s.index === d.step_index
+            ? {
+                ...s,
+                status: d.status as GlobalPlan['steps'][number]['status'],
+                started_at:
+                  d.status === 'in_progress' ? s.started_at ?? new Date().toISOString() : s.started_at,
+                completed_at:
+                  d.status === 'completed' || d.status === 'failed' || d.status === 'skipped'
+                    ? new Date().toISOString()
+                    : s.completed_at,
+              }
+            : s,
+        )
+        const current_step_index =
+          d.status === 'completed' || d.status === 'skipped' || d.status === 'failed'
+            ? Math.max(prev.current_step_index, d.step_index + 1)
+            : prev.current_step_index
+        return { global_plan: { ...prev, steps, current_step_index } }
+      })
+    })
+
+    // 自省校验结果
+    es.addEventListener('self_reflection', (e: MessageEvent) => {
+      const d = parseData<{ result: ReflectionResult }>(e.data)
+      if (!d) return
+      pushEvent({ type: 'self_reflection', result: d.result })
+      // 挂载到当前 ReAct 步骤的 reflection_result
+      patchCurrent(() => {
+        const task = get().currentTask
+        if (!task) return {}
+        const history = task.history
+        if (history.length === 0) return {}
+        const lastIdx = history.length - 1
+        const history2 = history.slice()
+        history2[lastIdx] = { ...history2[lastIdx], reflection_result: d.result }
+        return { history: history2 }
+      })
+    })
+
+    // 高危操作拦截告警
+    es.addEventListener('sandbox_alert', (e: MessageEvent) => {
+      const d = parseData<SandboxAlert>(e.data)
+      if (!d) return
+      pushEvent({ type: 'sandbox_alert', reason: d.reason, call: d.call })
+      set({ sandboxAlert: d })
+    })
+
+    // 死循环熔断检测
+    es.addEventListener('loop_detected', (e: MessageEvent) => {
+      const d = parseData<{ pattern: string }>(e.data)
+      if (!d) return
+      pushEvent({ type: 'loop_detected', pattern: d.pattern })
+      set({ loopPattern: d.pattern })
+    })
+
     es.onerror = () => {
       // EventSource 会自动重连；仅在任务终态时彻底关闭
       const st = get().currentTask?.state
@@ -337,6 +426,8 @@ export const useAgentTasksStore = create<AgentTasksState>((set, get) => ({
   },
 
   clearEventLog: () => set({ eventLog: [] }),
+
+  dismissSandboxAlert: () => set({ sandboxAlert: null }),
 
   selectTask: (id) => {
     // 切换任务前先停掉旧流，避免旧事件污染新视图

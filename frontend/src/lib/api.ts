@@ -44,6 +44,8 @@ import type {
   SkillMatch,
   SkillMeta,
   SkillsConfig,
+  TerminalExecResult,
+  TerminalSession,
   TodoItem,
   TodoStatus,
   ToolInfo,
@@ -497,6 +499,36 @@ export const agentApi = {
   /** SSE 端点 URL 构造器（供 EventSource 直连，复用 BASE 自动处理 Tauri/浏览器环境） */
   taskStreamUrl: (id: string) =>
     `${BASE}/agent/tasks/${encodeURIComponent(id)}/stream`,
+}
+
+/* ============================================================
+ * 终端会话（PersistentShell，供 xterm.js 终端面板使用）
+ * ============================================================ */
+export const terminalApi = {
+  /** 创建持久终端会话，返回 session_id */
+  createSession: (projectRoot: string) =>
+    request<{ session_id: string }>('POST', '/agent/terminal/sessions', {
+      project_root: projectRoot,
+    }),
+  /** 在会话中执行命令（同步返回输出） */
+  execCommand: (sessionId: string, command: string, timeoutSecs?: number) =>
+    request<TerminalExecResult>(
+      'POST',
+      `/agent/terminal/sessions/${encodeURIComponent(sessionId)}/exec`,
+      { command, timeout_secs: timeoutSecs },
+    ),
+  /** 关闭会话 */
+  closeSession: (sessionId: string) =>
+    request<void>(
+      'DELETE',
+      `/agent/terminal/sessions/${encodeURIComponent(sessionId)}`,
+    ),
+  /** 列出所有会话 */
+  listSessions: () =>
+    request<TerminalSession[]>('GET', '/agent/terminal/sessions'),
+  /** SSE 流式输出 URL（供 EventSource 直连） */
+  streamUrl: (sessionId: string) =>
+    `${BASE}/agent/terminal/sessions/${encodeURIComponent(sessionId)}/stream`,
 }
 
 /* ============================================================

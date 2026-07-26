@@ -565,6 +565,8 @@ export interface ReActStep {
   observation: string
   reflection: string | null
   timestamp: string
+  /** 自省校验结果（若该步骤触发了 SelfReflection） */
+  reflection_result?: ReflectionResult | null
 }
 
 export interface Checkpoint {
@@ -588,6 +590,8 @@ export interface AgentTask {
   error: string | null
   created_at: string
   updated_at: string
+  /** 顶层长期规划（由 GlobalPlanner 生成） */
+  global_plan?: GlobalPlan | null
 }
 
 /** SSE 事件联合类型（GET /api/agent/tasks/:id/stream） */
@@ -601,3 +605,62 @@ export type AgentEvent =
   | { type: 'task_complete'; summary: string }
   | { type: 'task_error'; error: string; recoverable: boolean }
   | { type: 'log'; level: string; message: string }
+  | { type: 'global_plan_created'; plan: GlobalPlan }
+  | { type: 'plan_step_changed'; step_index: number; status: string; goal: string }
+  | { type: 'self_reflection'; result: ReflectionResult }
+  | { type: 'sandbox_alert'; reason: string; call: ToolCall }
+  | { type: 'loop_detected'; pattern: string }
+
+// ===== 终端会话 =====
+export interface TerminalSession {
+  session_id: string
+  created_at: string
+  cwd: string
+}
+
+export interface TerminalExecResult {
+  output: string
+  cwd: string
+}
+
+export interface TerminalOutputEvent {
+  line: string
+}
+
+// ===== GlobalPlan 顶层规划 =====
+export type PlanStepStatus = 'pending' | 'in_progress' | 'completed' | 'skipped' | 'failed'
+
+export interface PlanStep {
+  id: string
+  index: number
+  goal: string
+  success_criteria: string
+  status: PlanStepStatus
+  started_at: string | null
+  completed_at: string | null
+}
+
+export interface GlobalPlan {
+  task_id: string
+  overall_goal: string
+  steps: PlanStep[]
+  current_step_index: number
+  created_at: string
+  updated_at: string
+}
+
+// ===== SelfReflection 自省校验 =====
+export interface ReflectionResult {
+  success: boolean
+  issue: string | null
+  fix_attempts: number
+  fixed: boolean
+  fix_diffs: string[]
+  log: string
+}
+
+// ===== Sandbox 高危告警 =====
+export interface SandboxAlert {
+  reason: string
+  call: ToolCall
+}
