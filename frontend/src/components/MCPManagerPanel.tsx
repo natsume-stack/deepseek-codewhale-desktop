@@ -97,6 +97,7 @@ export function MCPManagerPanel({ floating, onClose }: MCPManagerPanelProps) {
         <ToggleSwitch
           enabled={highRiskEnabled}
           onToggle={() => void setHighRiskSwitch(!highRiskEnabled)}
+          warn
         />
       </div>
 
@@ -171,7 +172,7 @@ export function MCPManagerPanel({ floating, onClose }: MCPManagerPanelProps) {
         onClick={() => onClose?.()}
       >
         <div
-          className="w-[640px] max-w-[92vw] max-h-[85vh] rounded-lg border border-white/10 bg-surface-elevated shadow-raised animate-scale-in flex flex-col overflow-hidden"
+          className="w-[680px] max-w-[94vw] max-h-[85vh] rounded-3xl border border-surface-border bg-surface-elevated shadow-raised animate-scale-in flex flex-col overflow-hidden"
           onClick={(e) => e.stopPropagation()}
         >
           {body}
@@ -209,10 +210,10 @@ function PluginCard({
   const blockedByGate = meta.highRisk && !highRiskGate
   return (
     <div
-      className={`group px-3 py-2.5 rounded-lg border transition-all duration-200 ease-out
+      className={`group px-4 py-3 rounded-xl border transition-all duration-200 ease-bounce hover:scale-[1.01]
         ${status.connected
           ? 'border-emerald-500/30 bg-emerald-500/5'
-          : 'border-white/8 bg-white/4 hover:bg-white/6 hover:border-white/12'
+          : 'border-white/6 bg-surface-elevated/60 hover:bg-white/8 hover:border-white/12'
         }`}
     >
       <div className="flex items-start gap-3">
@@ -360,7 +361,7 @@ function RegisterPluginModal({
       onClick={onClose}
     >
       <div
-        className="w-[560px] max-w-[92vw] max-h-[85vh] rounded-lg border border-white/10 bg-surface-elevated shadow-raised animate-scale-in flex flex-col overflow-hidden"
+        className="w-[600px] max-w-[94vw] max-h-[85vh] rounded-3xl border border-surface-border bg-surface-elevated shadow-raised animate-scale-in flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-4 py-3 border-b border-white/8">
@@ -562,20 +563,20 @@ function EmptyHint({ icon, text }: { icon: React.ReactNode; text: string }) {
   )
 }
 
-function ToggleSwitch({ enabled, onToggle }: { enabled: boolean; onToggle: () => void }) {
+function ToggleSwitch({ enabled, onToggle, warn = false }: { enabled: boolean; onToggle: () => void; warn?: boolean }) {
   return (
     <button
       onClick={(e) => {
         e.stopPropagation()
         onToggle()
       }}
-      className={`flex-shrink-0 w-8 h-4 rounded-full transition-colors ${enabled ? 'bg-accent' : 'bg-white/12'}`}
+      className={`flex-shrink-0 w-11 h-6 rounded-full transition-all duration-300 ease-bounce hover:scale-105 ${enabled ? (warn ? 'bg-warn' : 'bg-white') : 'bg-white/12'}`}
       role="switch"
       aria-checked={enabled}
       title={enabled ? '点击禁用' : '点击启用'}
     >
       <div
-        className={`w-3 h-3 rounded-full bg-white transition-transform ${enabled ? 'translate-x-4' : 'translate-x-0.5'}`}
+        className={`w-5 h-5 rounded-full bg-black shadow-md transition-transform duration-300 ease-bounce ${enabled ? 'translate-x-5' : 'translate-x-0.5'}`}
       />
     </button>
   )

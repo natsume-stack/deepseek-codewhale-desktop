@@ -44,16 +44,16 @@ export function RightPanel({ onClose }: RightPanelProps) {
   return (
     <div className="h-full flex flex-col border-l border-white/5 bg-white/3">
       {/* === Tab 切换栏 === */}
-      <div className="flex items-center justify-between px-2 pt-2 border-b border-white/5">
-        <div className="flex items-center gap-0.5">
+      <div className="flex items-center justify-between px-3 pt-3 border-b border-white/5 gap-2">
+        <div className="flex items-center gap-1">
           {tabs.map((t) => (
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
-              className={`flex items-center gap-1.5 px-3 py-2 text-2xs font-medium rounded-t-lg transition-all duration-200 ease-out
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-xl transition-all duration-200 ease-bounce
                 ${tab === t.key
-                  ? 'text-text-primary bg-white/6'
-                  : 'text-text-tertiary hover:text-text-secondary hover:bg-white/3'
+                  ? 'text-text-primary bg-white/10'
+                  : 'text-text-tertiary hover:text-text-secondary hover:bg-white/8'
                 }`}
             >
               <span className="opacity-80">{t.icon}</span>
@@ -61,17 +61,19 @@ export function RightPanel({ onClose }: RightPanelProps) {
             </button>
           ))}
         </div>
-        <button onClick={onClose} className="icon-btn !p-1" title="关闭面板">
+        <button onClick={onClose} className="icon-btn" title="关闭面板">
           <CloseIcon />
         </button>
       </div>
 
       {/* === Tab 内容 === */}
       <div className="flex-1 min-h-0 overflow-hidden">
-        {tab === 'changes' && <ChangesTab />}
-        {tab === 'todos' && <TodosTab />}
-        {tab === 'rag' && <RagTab />}
-        {tab === 'skill-log' && <SkillLogTab />}
+        <div key={tab} className="h-full animate-fade-in">
+          {tab === 'changes' && <ChangesTab />}
+          {tab === 'todos' && <TodosTab />}
+          {tab === 'rag' && <RagTab />}
+          {tab === 'skill-log' && <SkillLogTab />}
+        </div>
       </div>
     </div>
   )
@@ -107,7 +109,7 @@ function ChangesTab() {
       <div className="flex items-center justify-between px-3 py-2 border-b border-white/5">
         <div className="flex items-center gap-1.5 text-2xs font-mono">
           {pendingCount > 0 && (
-            <span className="px-1.5 py-0.5 rounded bg-accent/15 text-accent">
+            <span className="px-2 py-0.5 rounded-xl bg-warn/15 text-warn">
               待应用 {pendingCount}
             </span>
           )}
@@ -265,16 +267,17 @@ function TodosTab() {
         {todos.length === 0 ? (
           <EmptyHint icon={<TodoIcon />} text="暂无代办事项。点击「新增」创建一条。" />
         ) : (
-          todos.map((t) => (
+          todos.map((t, index) => (
             <button
               key={t.id}
               onClick={() => toggle(t)}
-              className="w-full flex items-start gap-2.5 px-3 py-2.5 rounded-lg text-left hover:bg-white/4 transition-all duration-200 ease-out"
+              className="w-full flex items-start gap-3 px-3 py-2.5 rounded-xl text-left hover:bg-white/8 hover:scale-[1.01] transition-all duration-200 ease-bounce animate-slide-up-spring"
+              style={{ animationDelay: `${index * 30}ms`, animationFillMode: 'both' }}
             >
               <span
-                className={`mt-0.5 w-4 h-4 rounded-md border flex items-center justify-center flex-shrink-0 transition-all duration-200
+                className={`mt-0.5 w-5 h-5 rounded-xl border flex items-center justify-center flex-shrink-0 transition-all duration-200
                   ${t.status === 'done'
-                    ? 'bg-accent/20 border-accent/40 text-accent'
+                    ? 'bg-white/20 border-white/40 text-white'
                     : 'border-white/15 text-transparent hover:border-white/30'
                   }`}
               >
@@ -341,10 +344,10 @@ interface DiffEntryItemProps {
 function DiffEntryItem({ entry, expanded, onToggle, onApply, onReject, onRevert }: DiffEntryItemProps) {
   const fileName = entry.filePath.replace(/\\/g, '/').split('/').pop() ?? entry.filePath
   return (
-    <div>
+    <div className="animate-slide-up-spring" style={{ animationFillMode: 'both' }}>
       <button
         onClick={onToggle}
-        className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left hover:bg-white/6 transition-all duration-200 ease-out"
+        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left hover:bg-white/8 hover:scale-[1.01] transition-all duration-200 ease-bounce"
       >
         <ChevronIcon open={expanded} />
         <span className="text-xs font-mono text-text-primary truncate flex-1">{fileName}</span>

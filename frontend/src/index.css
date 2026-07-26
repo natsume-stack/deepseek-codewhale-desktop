@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 /* ============================================================
- * 全局基础样式（Codex Desktop 风格 + Mica 透明窗口）
+ * 全局基础样式（白灰黑高级生产力风格 + Mica 透明窗口）
  *
  * 架构层级：
  *   1. 系统窗口层（Tauri + Win32）：Mica 云母材质，已由 tauri.conf.json + lib.rs 启用
@@ -11,6 +11,12 @@
  *   3. 前端组件层：
  *      - 左侧 SideNav：透明，让 Mica 穿透
  *      - 右侧工作区：不透明深色板块（surface.work），与左侧分层
+ *
+ * 设计规范：
+ *   - 配色：白/灰/黑为主，暖橙仅用于警告/权限按钮
+ *   - 圆角：大圆角设计，输入框 28px，卡片 20px+
+ *   - 字体：统一黑体，整洁美观
+ *   - 动画：非线性弹性动画，流畅体验
  *
  * 严禁给 html / body / #root 加任何不透明背景，否则 Mica 会被完全遮挡。
  * ============================================================ */
@@ -30,12 +36,17 @@
     font-family: theme('fontFamily.sans');
     font-size: theme('fontSize.base');
     color: theme('colors.text.primary');
-    /* 黑体粗字风格 */
-    font-weight: 450;
+    /* 黑体常规字重 */
+    font-weight: 400;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     user-select: none;
     letter-spacing: 0.01em;
+  }
+
+  /* 标题使用半粗体 */
+  h1, h2, h3, h4, h5, h6 {
+    font-weight: 600;
   }
 
   /* 允许选择的区域（代码块、消息文本、输入框） */
@@ -45,7 +56,7 @@
     user-select: text;
   }
 
-  /* 轻量化滚动条（对齐 Codex） */
+  /* 轻量化滚动条（白灰风格） */
   ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
@@ -54,11 +65,11 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.12);
     border-radius: 3px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.18);
+    background: rgba(255, 255, 255, 0.20);
   }
   ::-webkit-scrollbar-corner {
     background: transparent;
@@ -78,7 +89,7 @@
 }
 
 /* ============================================================
- * 通用组件类（Codex 风格：黑灰板块 + 蓝色点缀）
+ * 通用组件类（白灰黑高级生产力风格：大圆角 + 弹性动画）
  * ============================================================ */
 @layer components {
   /* 面板顶部 Header（透明 + 底部细线） */
@@ -88,76 +99,140 @@
   }
 
   .panel-title {
-    @apply text-sm font-medium text-text-primary;
+    @apply text-sm font-semibold text-text-primary;
   }
 
-  /* 透明图标按钮（hover 时半透明浮起） */
+  /* 透明图标按钮（大圆角，hover 时半透明浮起） */
   .icon-btn {
-    @apply inline-flex items-center justify-center p-1.5 rounded
-           text-text-secondary
-           hover:bg-white/8 hover:text-text-primary
-           transition-all duration-200 ease-out cursor-pointer;
+    @apply inline-flex items-center justify-center p-2 rounded-xl
+           text-text-secondary cursor-pointer;
+    transition: all 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .icon-btn:hover {
+    background-color: rgba(255, 255, 255, 0.10);
+    color: rgba(255, 255, 255, 0.95);
   }
   .icon-btn:disabled {
-    @apply opacity-30 cursor-not-allowed hover:bg-transparent hover:text-text-secondary;
+    @apply opacity-30 cursor-not-allowed;
+  }
+  .icon-btn:disabled:hover {
+    background-color: transparent;
+    color: rgba(255, 255, 255, 0.55);
   }
 
-  /* 强调按钮（蓝色主色） */
+  /* 主按钮（白底黑字，深色底上的主交互） */
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded
-           bg-accent text-white text-xs font-medium
-           hover:bg-accent-hover hover:shadow-soft
-           transition-all duration-200 ease-out cursor-pointer;
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl
+           bg-white text-black text-sm font-medium cursor-pointer;
+    transition: all 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .btn-primary:hover {
+    background-color: rgba(255, 255, 255, 0.90);
   }
 
-  /* 次级按钮（半透明浮层） */
+  /* 次级按钮（半透明浮层，大圆角） */
   .btn-secondary {
-    @apply inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded
-           bg-white/8 text-text-primary text-xs font-medium
-           border border-white/8
-           hover:bg-white/12 hover:border-white/12
-           transition-all duration-200 ease-out cursor-pointer;
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl
+           text-text-primary text-sm font-medium cursor-pointer;
+    background-color: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    transition: all 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .btn-secondary:hover {
+    background-color: rgba(255, 255, 255, 0.14);
+    border-color: rgba(255, 255, 255, 0.14);
   }
 
-  /* 危险按钮（柔和红色，非刺眼） */
+  /* 危险按钮（柔和红色，大圆角） */
   .btn-danger {
-    @apply inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded
-           bg-rose-500/80 text-white text-xs font-medium
-           hover:bg-rose-500 transition-all duration-200 ease-out cursor-pointer;
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl
+           text-white text-sm font-medium cursor-pointer;
+    background-color: rgba(244, 63, 94, 0.80);
+    transition: all 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .btn-danger:hover {
+    background-color: rgb(244, 63, 94);
   }
 
-  /* 输入框（半透明浮层 + 聚焦蓝色光晕） */
+  /* 警告按钮（暖橙，仅用于高危/权限/完全访问等场景） */
+  .btn-warn {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl
+           text-white text-sm font-medium cursor-pointer;
+    background-color: #F97316;
+    transition: all 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .btn-warn:hover {
+    background-color: #EA580C;
+  }
+
+  /* 输入框（大圆角，聚焦白边框） */
   .input-base {
-    @apply w-full px-3 py-1.5 rounded
-           bg-white/6 text-text-primary text-sm
-           border border-white/8 placeholder-text-tertiary
-           focus:outline-none focus:border-accent/50 focus:bg-white/8
-           transition-all duration-200 ease-out;
+    @apply w-full px-4 py-2 rounded-xl
+           text-text-primary text-sm;
+    background-color: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    transition: all 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .input-base::placeholder {
+    color: rgba(255, 255, 255, 0.32);
+  }
+  .input-base:focus {
+    outline: none;
+    border-color: rgba(255, 255, 255, 0.20);
+    background-color: rgba(255, 255, 255, 0.08);
   }
 
-  /* 工作区主板块（不透明深色圆角板块，与左侧 Mica 分层）
+  /* 工作区主板块（不透明深色大圆角板块，与左侧 Mica 分层）
    * 用法：包裹在 App.tsx 右侧工作区外层 */
   .work-surface {
-    @apply rounded-xl bg-surface-work border border-surface-border;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18), 0 8px 24px rgba(0, 0, 0, 0.20);
+    @apply rounded-2xl bg-surface-work border border-surface-border;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12), 0 8px 24px rgba(0, 0, 0, 0.16);
     overflow: hidden;
   }
 
-  /* 通用浮层卡片（在工作区板块之上的轻量浮起）
+  /* 通用浮层卡片（大圆角，在工作区板块之上的轻量浮起）
    * 注意：不加 backdrop-blur，避免模糊底层 */
   .surface {
-    @apply rounded-lg bg-surface-elevated border border-surface-border;
+    @apply rounded-xl bg-surface-elevated border border-surface-border;
   }
 
   .surface-raised {
-    @apply rounded-lg bg-surface-elevated border border-surface-border;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18), 0 8px 24px rgba(0, 0, 0, 0.20);
+    @apply rounded-2xl bg-surface-elevated border border-surface-border;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12), 0 8px 24px rgba(0, 0, 0, 0.16);
   }
 
-  /* 悬浮分隔条（极简，hover 显示蓝色） */
+  /* 输入框/消息编辑器容器（超大圆角，浮起样式） */
+  .composer {
+    @apply rounded-3xl bg-surface-elevated border border-surface-border;
+  }
+
+  /* 小标签/芯片（胶囊形圆角） */
+  .chip {
+    @apply inline-flex items-center rounded-full px-2.5 py-1 text-xs text-text-secondary;
+    background-color: rgba(255, 255, 255, 0.08);
+  }
+
+  /* 上下文标签（可点击，大圆角） */
+  .context-tag {
+    @apply inline-flex items-center rounded-full px-3 py-1.5 text-sm cursor-pointer;
+    background-color: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.55);
+    transition: all 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .context-tag:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.95);
+  }
+
+  /* 悬浮分隔条（极简，hover 显示白色） */
   .splitter {
-    @apply w-px flex-shrink-0 cursor-col-resize bg-white/5
-           hover:bg-accent/50 hover:w-[2px] transition-all duration-200 ease-out relative;
+    @apply w-px flex-shrink-0 cursor-col-resize relative;
+    background-color: rgba(255, 255, 255, 0.05);
+    transition: all 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .splitter:hover {
+    background-color: rgba(255, 255, 255, 0.20);
+    width: 2px;
   }
   .splitter::before {
     content: '';

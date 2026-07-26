@@ -177,7 +177,7 @@ export function SkillListPanel({ floating, onClose }: SkillListPanelProps) {
         onClick={() => onClose?.()}
       >
         <div
-          className="w-[640px] max-w-[92vw] max-h-[85vh] rounded-lg border border-white/10 bg-surface-elevated shadow-raised animate-scale-in flex flex-col overflow-hidden"
+          className="w-[680px] max-w-[94vw] max-h-[85vh] rounded-3xl border border-surface-border bg-surface-elevated shadow-raised animate-scale-in flex flex-col overflow-hidden"
           onClick={(e) => e.stopPropagation()}
         >
           {body}
@@ -201,7 +201,7 @@ interface SkillCardProps {
 function SkillCard({ skill, onToggle, onClick, onDelete }: SkillCardProps) {
   return (
     <div
-      className="group px-3 py-2.5 rounded-lg border border-white/8 bg-white/4 hover:bg-white/6 hover:border-white/12 transition-all duration-200 ease-out cursor-pointer"
+      className="group px-4 py-3 rounded-xl border border-white/6 bg-surface-elevated/60 hover:bg-white/8 hover:border-white/12 transition-all duration-200 ease-bounce cursor-pointer hover:scale-[1.01]"
       onClick={onClick}
     >
       <div className="flex items-start gap-3">
@@ -291,7 +291,7 @@ function SkillDetailModal({
       onClick={onClose}
     >
       <div
-        className="w-[560px] max-w-[92vw] max-h-[80vh] rounded-lg border border-white/10 bg-surface-elevated shadow-raised animate-scale-in flex flex-col overflow-hidden"
+        className="w-[600px] max-w-[94vw] max-h-[82vh] rounded-3xl border border-surface-border bg-surface-elevated shadow-raised animate-scale-in flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-4 py-3 border-b border-white/8">
@@ -440,7 +440,7 @@ function CreateSkillModal({
       onClick={onClose}
     >
       <div
-        className="w-[520px] max-w-[92vw] max-h-[85vh] rounded-lg border border-white/10 bg-surface-elevated shadow-raised animate-scale-in flex flex-col overflow-hidden"
+        className="w-[560px] max-w-[94vw] max-h-[85vh] rounded-3xl border border-surface-border bg-surface-elevated shadow-raised animate-scale-in flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-4 py-3 border-b border-white/8">
@@ -565,7 +565,7 @@ function AgentsMdModal({
       onClick={onClose}
     >
       <div
-        className="w-[640px] max-w-[92vw] h-[80vh] rounded-lg border border-white/10 bg-surface-elevated shadow-raised animate-scale-in flex flex-col overflow-hidden"
+        className="w-[680px] max-w-[94vw] h-[82vh] rounded-3xl border border-surface-border bg-surface-elevated shadow-raised animate-scale-in flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-4 py-3 border-b border-white/8">
@@ -658,13 +658,13 @@ function ToggleSwitch({ enabled, onToggle }: { enabled: boolean; onToggle: () =>
         e.stopPropagation()
         onToggle()
       }}
-      className={`flex-shrink-0 w-8 h-4 rounded-full transition-colors ${enabled ? 'bg-accent' : 'bg-white/12'}`}
+      className={`flex-shrink-0 w-11 h-6 rounded-full transition-all duration-300 ease-bounce hover:scale-105 ${enabled ? 'bg-white' : 'bg-white/12'}`}
       role="switch"
       aria-checked={enabled}
       title={enabled ? '点击禁用' : '点击启用'}
     >
       <div
-        className={`w-3 h-3 rounded-full bg-white transition-transform ${enabled ? 'translate-x-4' : 'translate-x-0.5'}`}
+        className={`w-5 h-5 rounded-full bg-black shadow-md transition-transform duration-300 ease-bounce ${enabled ? 'translate-x-5' : 'translate-x-0.5'}`}
       />
     </button>
   )

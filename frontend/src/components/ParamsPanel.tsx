@@ -246,7 +246,7 @@ export function ParamsPanel({ embedded = false }: { embedded?: boolean }) {
                     title={e.hint}
                     className={`px-2 py-1.5 rounded text-2xs transition-colors
                       ${effort === e.value
-                        ? 'bg-accent text-white'
+                        ? 'bg-white text-black'
                         : 'bg-white/6 text-text-secondary border border-white/8 hover:bg-white/12'
                       }`}
                   >

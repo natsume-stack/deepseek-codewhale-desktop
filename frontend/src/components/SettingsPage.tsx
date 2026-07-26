@@ -239,24 +239,25 @@ export function SettingsPage() {
 
   return (
     <ToastContext.Provider value={showToast}>
-      <div className="flex h-full w-full p-3 gap-3 overflow-hidden">
-        {/* === 左侧导航（200px，圆角顶部，半透明） === */}
-        <aside className="w-[200px] flex-shrink-0 surface flex flex-col overflow-hidden">
-          <div className="px-3 py-3 border-b border-white/5">
+      <div className="flex h-full w-full p-4 gap-4 overflow-hidden animate-page-transition">
+        {/* === 左侧导航（200px，大圆角，半透明） === */}
+        <aside className="w-[220px] flex-shrink-0 rounded-2xl border border-white/6 bg-surface-elevated/60 flex flex-col overflow-hidden">
+          <div className="px-5 py-4 border-b border-white/5">
             <div className="text-2xs uppercase tracking-wider text-text-tertiary font-semibold">
               设置
             </div>
           </div>
-          <nav className="flex-1 overflow-auto p-2 space-y-0.5">
-            {SECTIONS.map((s) => (
+          <nav className="flex-1 overflow-auto p-3 space-y-1">
+            {SECTIONS.map((s, index) => (
               <button
                 key={s.key}
                 onClick={() => setSection(s.key)}
-                className={`w-full text-left px-3 py-2 rounded transition-all duration-200 ease-out
+                className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-200 ease-bounce animate-slide-up-spring hover:scale-[1.01]
                   ${section === s.key
-                    ? 'bg-accent/12 text-accent'
-                    : 'text-text-secondary hover:bg-white/6 hover:text-text-primary'
+                    ? 'bg-white/10 text-text-primary'
+                    : 'text-text-secondary hover:bg-white/8 hover:text-text-primary'
                   }`}
+                style={{ animationDelay: `${index * 30}ms`, animationFillMode: 'both' }}
               >
                 <div className="text-sm font-medium">{s.label}</div>
                 <div className="text-2xs text-text-tertiary mt-0.5 truncate">{s.desc}</div>
@@ -266,9 +267,9 @@ export function SettingsPage() {
         </aside>
 
         {/* === 右侧内容 === */}
-        <main className="flex-1 min-w-0 surface flex flex-col overflow-hidden">
+        <main className="flex-1 min-w-0 rounded-2xl border border-white/6 bg-surface-elevated/60 flex flex-col overflow-hidden">
           {/* 顶部：返回按钮 + 当前 Section 标题 */}
-          <div className="flex items-center gap-2 px-4 py-3 border-b border-white/5">
+          <div className="flex items-center gap-3 px-5 py-4 border-b border-white/5">
             <button
               onClick={handleBack}
               className="icon-btn"
@@ -277,12 +278,12 @@ export function SettingsPage() {
             >
               <BackIcon />
             </button>
-            <h2 className="text-sm font-semibold text-text-primary">{meta.label}</h2>
-            <span className="text-2xs text-text-tertiary">{meta.desc}</span>
+            <h2 className="text-base font-semibold text-text-primary">{meta.label}</h2>
+            <span className="text-sm text-text-tertiary">{meta.desc}</span>
 
             {/* Toast 提示（右上角短暂闪现） */}
             {toast && (
-              <div className="ml-auto px-2 py-0.5 rounded text-2xs text-diff-added-text bg-diff-added/30 border border-diff-added/40 animate-fade-in">
+              <div className="ml-auto px-3 py-1 rounded-xl text-xs text-diff-added-text bg-diff-added/30 border border-diff-added/40 animate-fade-in">
                 {toast}
               </div>
             )}
@@ -290,18 +291,20 @@ export function SettingsPage() {
 
           {/* 内容滚动区 */}
           <div className="flex-1 overflow-auto p-6">
-            {section === 'model' && <ModelSection />}
-            {section === 'api' && <ApiSection />}
-            {section === 'permission' && <PermissionSection />}
-            {section === 'skill' && <SkillSection />}
-            {section === 'mcp' && <McpSection />}
-            {section === 'rag' && <RagSection />}
-            {section === 'formatter' && <FormatterSection />}
-            {section === 'cache' && <CacheSection />}
-            {section === 'appearance' && <AppearanceSection />}
-            {section === 'shortcuts' && <ShortcutsSection />}
-            {section === 'security' && <SecuritySection />}
-            {section === 'about' && <AboutSection />}
+            <div key={section} className="animate-fade-in">
+              {section === 'model' && <ModelSection />}
+              {section === 'api' && <ApiSection />}
+              {section === 'permission' && <PermissionSection />}
+              {section === 'skill' && <SkillSection />}
+              {section === 'mcp' && <McpSection />}
+              {section === 'rag' && <RagSection />}
+              {section === 'formatter' && <FormatterSection />}
+              {section === 'cache' && <CacheSection />}
+              {section === 'appearance' && <AppearanceSection />}
+              {section === 'shortcuts' && <ShortcutsSection />}
+              {section === 'security' && <SecuritySection />}
+              {section === 'about' && <AboutSection />}
+            </div>
           </div>
         </main>
       </div>
@@ -333,7 +336,7 @@ function SectionHeader({ title, desc }: { title: string; desc: string }) {
 function ErrorBanner({ message }: { message: string | null }) {
   if (!message) return null
   return (
-    <div className="mb-4 px-3 py-2 rounded-lg text-2xs text-diff-removed-text bg-diff-removed/20 border border-diff-removed/40">
+    <div className="mb-5 px-4 py-3 rounded-xl text-sm text-diff-removed-text bg-diff-removed/20 border border-diff-removed/40">
       {message}
     </div>
   )
@@ -350,28 +353,30 @@ function ToggleRow({
   on,
   disabled,
   onChange,
+  warn = false,
 }: {
   label: string
   desc: string
   on: boolean
   disabled?: boolean
   onChange: (v: boolean) => void
+  warn?: boolean
 }) {
   return (
-    <div className="flex items-center justify-between px-3 py-2.5">
-      <div className="min-w-0">
+    <div className="flex items-center justify-between px-4 py-3">
+      <div className="min-w-0 pr-4">
         <div className="text-sm text-text-primary">{label}</div>
-        <div className="text-2xs text-text-tertiary mt-0.5">{desc}</div>
+        <div className="text-xs text-text-tertiary mt-0.5">{desc}</div>
       </div>
       <button
-        className={`w-8 h-4 rounded-full transition-colors flex-shrink-0 ${on ? 'bg-accent' : 'bg-white/12'} ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+        className={`w-11 h-6 rounded-full transition-all duration-300 ease-bounce flex-shrink-0 ${on ? (warn ? 'bg-warn' : 'bg-white') : 'bg-white/12'} ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:scale-105'}`}
         onClick={() => !disabled && onChange(!on)}
         role="switch"
         aria-checked={on}
         disabled={disabled}
       >
         <div
-          className={`w-3 h-3 rounded-full bg-white transition-transform ${on ? 'translate-x-4' : 'translate-x-0.5'}`}
+          className={`w-5 h-5 rounded-full bg-black shadow-md transition-transform duration-300 ease-bounce ${on ? 'translate-x-5' : 'translate-x-0.5'}`}
         />
       </button>
     </div>
@@ -401,13 +406,13 @@ function Slider({
   onChange: (v: number) => void
 }) {
   return (
-    <div className={`px-3 py-2.5 ${disabled ? 'opacity-60' : ''}`}>
-      <div className="flex items-center justify-between mb-2">
+    <div className={`px-4 py-3 ${disabled ? 'opacity-60' : ''}`}>
+      <div className="flex items-center justify-between mb-3">
         <div className="min-w-0">
           <div className="text-sm text-text-primary">{label}</div>
-          {desc && <div className="text-2xs text-text-tertiary mt-0.5">{desc}</div>}
+          {desc && <div className="text-xs text-text-tertiary mt-0.5">{desc}</div>}
         </div>
-        <span className="px-1.5 py-0.5 rounded text-2xs font-mono bg-white/6 text-text-secondary flex-shrink-0">
+        <span className="px-2 py-1 rounded-xl text-xs font-mono bg-white/10 text-text-secondary flex-shrink-0">
           {value}{unit}
         </span>
       </div>
@@ -419,8 +424,8 @@ function Slider({
         value={value}
         disabled={disabled}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="w-full h-1 rounded-full appearance-none bg-white/12 accent-accent cursor-pointer
-          disabled:cursor-not-allowed"
+        className="w-full h-1.5 rounded-full appearance-none bg-white/10 cursor-pointer
+          disabled:cursor-not-allowed [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:shadow-md [&::-webkit-slider-thumb]:transition-transform [&::-webkit-slider-thumb]:hover:scale-110"
       />
     </div>
   )
@@ -461,16 +466,16 @@ function TagInput({
     <div className="px-3 py-2.5">
       <div className="text-sm text-text-primary mb-0.5">{label}</div>
       {desc && <div className="text-2xs text-text-tertiary mb-2">{desc}</div>}
-      <div className="flex flex-wrap gap-1 mb-2">
+      <div className="flex flex-wrap gap-2 mb-3">
         {tags.map((t) => (
           <span
             key={t}
-            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-2xs font-mono bg-accent/12 text-accent"
+            className="inline-flex items-center gap-1 px-2 py-1 rounded-xl text-xs font-mono bg-white/10 text-text-secondary"
           >
             {t}
             <button
               onClick={() => removeTag(t)}
-              className="text-accent/70 hover:text-accent"
+              className="text-text-tertiary hover:text-text-primary transition-colors"
               aria-label={`移除 ${t}`}
             >
               ×
@@ -546,7 +551,7 @@ function Modal({
   title,
   onClose,
   children,
-  width = 'w-[480px]',
+  width = 'w-[520px]',
 }: {
   title: string
   onClose: () => void
@@ -555,22 +560,24 @@ function Modal({
 }) {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 animate-fade-in"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in"
       onClick={onClose}
     >
       <div
-        className={`surface-raised ${width} max-w-[90vw] max-h-[85vh] overflow-auto p-4 animate-scale-in`}
+        className={`rounded-3xl border border-surface-border bg-surface-elevated shadow-raised ${width} max-w-[92vw] max-h-[85vh] overflow-hidden animate-scale-in flex flex-col`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold text-text-primary">{title}</h3>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-white/5">
+          <h3 className="text-base font-semibold text-text-primary">{title}</h3>
           <button className="icon-btn" onClick={onClose} aria-label="关闭">
-            <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
               <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
             </svg>
           </button>
         </div>
-        {children}
+        <div className="flex-1 overflow-auto p-5">
+          {children}
+        </div>
       </div>
     </div>
   )
@@ -631,14 +638,14 @@ function ConfigGroup({
   action?: ReactNode
 }) {
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <div className="text-2xs uppercase tracking-wider text-text-tertiary font-semibold">
+        <div className="text-xs uppercase tracking-wider text-text-tertiary font-semibold">
           {title}
         </div>
         {action}
       </div>
-      <div className="rounded-lg border border-white/8 bg-white/4 divide-y divide-white/5 overflow-hidden">
+      <div className="rounded-2xl border border-white/6 bg-surface-elevated/60 divide-y divide-white/5 overflow-hidden hover:border-white/10 transition-all duration-200">
         {children}
       </div>
     </div>
@@ -736,17 +743,17 @@ function ModelSection() {
       <ErrorBanner message={error} />
 
       <ConfigGroup title="推理强度">
-        <div className="px-3 py-2.5">
-          <div className="grid grid-cols-4 gap-1">
+        <div className="px-4 py-4">
+          <div className="grid grid-cols-4 gap-2">
             {REASONING_EFFORTS.map((e) => (
               <button
                 key={e.value}
                 onClick={() => void saveParams({ reasoningEffort: e.value })}
                 disabled={saving}
                 title={e.hint}
-                className={`px-2 py-1.5 rounded text-2xs transition-colors disabled:opacity-50
+                className={`px-3 py-2 rounded-xl text-xs font-medium transition-all duration-200 ease-bounce disabled:opacity-50 hover:scale-[1.02]
                   ${effort === e.value
-                    ? 'bg-accent text-white'
+                    ? 'bg-white text-black'
                     : 'bg-white/6 text-text-secondary border border-white/8 hover:bg-white/12'
                   }`}
               >
@@ -754,7 +761,7 @@ function ModelSection() {
               </button>
             ))}
           </div>
-          <div className="text-2xs text-text-tertiary mt-1.5">
+          <div className="text-xs text-text-tertiary mt-3">
             {REASONING_EFFORTS.find((e) => e.value === effort)?.hint}
           </div>
         </div>
@@ -1851,7 +1858,7 @@ function McpFormModal({
                   key={p.value}
                   onClick={() => togglePerm(p.value)}
                   className={`px-2 py-1 rounded text-2xs transition-colors
-                    ${on ? 'bg-accent text-white' : 'bg-white/6 text-text-secondary border border-white/8'}`}
+                    ${on ? 'bg-white text-black' : 'bg-white/6 text-text-secondary border border-white/8'}`}
                 >
                   {p.label}
                 </button>
@@ -2424,7 +2431,7 @@ function AppearanceSection() {
                 onClick={() => update({ theme: t })}
                 className={`px-2 py-1.5 rounded text-2xs transition-colors
                   ${config?.theme === t
-                    ? 'bg-accent text-white'
+                    ? 'bg-white text-black'
                     : 'bg-white/6 text-text-secondary border border-white/8 hover:bg-white/12'
                   }`}
               >

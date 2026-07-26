@@ -125,7 +125,7 @@ export function SideNav({ view, onViewChange }: SideNavProps) {
             placeholder="搜索"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            className="w-full pl-7 pr-3 py-1.5 rounded-full bg-white/6 text-2xs text-text-primary placeholder-text-tertiary border border-white/5 focus:outline-none focus:border-accent/40 focus:bg-white/8 transition-all duration-200 ease-out"
+            className="w-full pl-8 pr-3 py-2 rounded-full bg-white/6 text-xs text-text-primary placeholder-text-tertiary border border-white/5 focus:outline-none focus:border-white/20 focus:bg-white/8 focus:ring-2 focus:ring-white/10 transition-all duration-200 ease-out"
             data-selectable="true"
             spellCheck={false}
           />
@@ -171,7 +171,7 @@ export function SideNav({ view, onViewChange }: SideNavProps) {
         )}
         {/* 列表态 */}
         {!loading && !error && filtered.length > 0 && (
-          filtered.map((s) => {
+          filtered.map((s, index) => {
             const isActive = activeSession === s.id && view === 'chat'
             const status = s.running ? 'running' : 'done'
             return (
@@ -181,11 +181,12 @@ export function SideNav({ view, onViewChange }: SideNavProps) {
                   setActiveSession(s.id)
                   onViewChange('chat')
                 }}
-                className={`w-full text-left px-3 py-2.5 rounded-xl mb-1 transition-all duration-200 ease-out group
+                className={`w-full text-left px-3 py-2.5 rounded-xl mb-1 transition-all duration-200 ease-bounce group animate-slide-up-spring hover:scale-[1.01]
                   ${isActive
-                    ? 'bg-white/8 text-text-primary'
-                    : 'text-text-secondary hover:bg-white/4 hover:text-text-primary'
+                    ? 'bg-white/10 text-text-primary'
+                    : 'text-text-secondary hover:bg-white/8 hover:text-text-primary'
                   }`}
+                style={{ animationDelay: `${index * 30}ms`, animationFillMode: 'both' }}
               >
                 <div className="flex items-center justify-between gap-2 mb-0.5">
                   <span className="text-xs font-semibold truncate">{deriveTitle(s)}</span>
@@ -246,33 +247,35 @@ function SkillsPluginsModal({ tab, onTabChange, onClose }: SkillsPluginsModalPro
       onClick={onClose}
     >
       <div
-        className="w-[680px] max-w-[94vw] h-[80vh] rounded-lg border border-white/10 bg-surface-elevated shadow-raised animate-scale-in flex flex-col overflow-hidden"
+        className="w-[720px] max-w-[94vw] h-[82vh] rounded-3xl border border-surface-border bg-surface-elevated shadow-raised animate-scale-in flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* === 顶部 Tab 切换栏 === */}
-        <div className="flex items-center justify-between px-2 pt-2 border-b border-white/8">
-          <div className="flex items-center gap-0.5">
+        <div className="flex items-center justify-between px-4 pt-4 border-b border-white/8 gap-3">
+          <div className="flex items-center gap-1">
             {tabs.map((t) => (
               <button
                 key={t.key}
                 onClick={() => onTabChange(t.key)}
-                className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-t-lg transition-all duration-200 ease-out
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-xl transition-all duration-200 ease-bounce
                   ${tab === t.key
-                    ? 'text-text-primary bg-white/6'
-                    : 'text-text-tertiary hover:text-text-secondary hover:bg-white/3'
+                    ? 'text-text-primary bg-white/10'
+                    : 'text-text-tertiary hover:text-text-secondary hover:bg-white/8'
                   }`}
               >
                 {t.label}
               </button>
             ))}
           </div>
-          <button onClick={onClose} className="icon-btn !p-1 mr-1" title="关闭">
+          <button onClick={onClose} className="icon-btn" title="关闭">
             <CloseIcon />
           </button>
         </div>
         {/* === Tab 内容（非浮层模式，占满剩余空间） === */}
         <div className="flex-1 min-h-0 overflow-hidden">
-          {tab === 'skills' ? <SkillListPanel /> : <MCPManagerPanel />}
+          <div key={tab} className="h-full animate-fade-in">
+            {tab === 'skills' ? <SkillListPanel /> : <MCPManagerPanel />}
+          </div>
         </div>
       </div>
     </div>
@@ -334,10 +337,10 @@ function NavAction({
   return (
     <button
       onClick={onClick}
-      className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all duration-200 ease-out
+      className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium transition-all duration-200 ease-bounce
         ${active
-          ? 'bg-accent/12 text-accent'
-          : 'text-text-secondary hover:bg-white/6 hover:text-text-primary'
+          ? 'bg-white/10 text-text-primary'
+          : 'text-text-secondary hover:bg-white/8 hover:text-text-primary'
         }`}
     >
       <span className="flex-shrink-0 opacity-80">{icon}</span>
@@ -351,7 +354,7 @@ function StatusDot({ status, active }: { status?: 'idle' | 'running' | 'done'; a
   if (!status || status === 'idle') return null
   const color =
     status === 'running'
-      ? 'bg-accent'
+      ? 'bg-warn'
       : 'bg-text-tertiary'
   return (
     <span

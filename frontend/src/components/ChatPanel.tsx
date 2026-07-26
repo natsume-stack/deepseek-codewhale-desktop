@@ -1,15 +1,3 @@
-/**
- * 中央对话面板（Codex 风格 - 阶段 2 重构）
- *
- *  - 顶栏：会话标题 + token 估算 + 右栏切换按钮（极简，无 token/sessionId 高亮）
- *  - 消息流：user / assistant 消息，含推理过程与代码块
- *  - 底部输入栏：Codex 风格圆角大框 + 内嵌发送 + 底部状态条（模型 / 上下文 / 权限）
- *
- * DiffPanel 已迁移到 WorkArea 右栏，本组件不再嵌入 DiffPanel。
- * 当用户点击代码块"应用修改"时，若右栏折叠，自动调用 onToggleRight 展开。
- *
- * 数据流：useChatStore.send() -> POST /api/chat (SSE) -> 增量更新 messages
- */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useChatStore } from '../stores/chat'
 import { useDiffStore } from '../stores/diffs'
@@ -19,11 +7,10 @@ import { MessageItem } from './MessageItem'
 import { SlashMenu, BUILTIN_SLASH_COMMANDS } from './SlashMenu'
 import type { SlashCommand } from './SlashMenu'
 import { FilePicker } from './FilePicker'
-import { ModelSwitcher } from './ModelSwitcher'
 import { SkillListPanel } from './SkillListPanel'
 import { MCPManagerPanel } from './MCPManagerPanel'
-import { configApi, paramsApi } from '../lib/api'
-import type { ModelProfile } from '../types'
+import { configApi, paramsApi, projectApi, gitApi, mcpApi, permissionApi } from '../lib/api'
+import type { ModelProfile, ProjectInfo, GitStatus, McpConfig, McpStatus, PermissionConfig, PermissionLevel, ReasoningEffort } from '../types'
 
 interface ChatPanelProps {
   onToggleLeft?: () => void
@@ -32,7 +19,6 @@ interface ChatPanelProps {
   rightCollapsed?: boolean
 }
 
-/** 内置模型档案（后端 /model-profiles 路由可能不存在，作为占位使用） */
 const BUILTIN_MODEL_PROFILES: ModelProfile[] = [
   {
     id: 'deepseek-chat',
@@ -60,14 +46,6 @@ const BUILTIN_MODEL_PROFILES: ModelProfile[] = [
   },
 ]
 
-/**
- * 扩展斜杠指令集：在内置指令基础上追加技能/插件相关指令。
- *  - /skill       触发技能匹配（作为 slashCommand 传给后端）
- *  - /skill-list  打开技能管理面板（视图类，不进入 slashCommand）
- *  - /mcp         调用 MCP 插件工具（作为 slashCommand 传给后端）
- *  - /mcp-list    打开 MCP 插件管理面板（视图类）
- *  - /plugin      /mcp-list 别名（视图类）
- */
 const EXTENDED_SLASH_COMMANDS: SlashCommand[] = [
   ...BUILTIN_SLASH_COMMANDS,
   { cmd: '/skill', label: '触发技能', desc: '对当前消息触发技能匹配' },
@@ -77,11 +55,40 @@ const EXTENDED_SLASH_COMMANDS: SlashCommand[] = [
   { cmd: '/plugin', label: '插件管理', desc: '打开 MCP 插件管理面板（同 /mcp-list）' },
 ]
 
-/** 视图类指令集合：选中后打开对应面板，不进入 slashCommand 流程 */
 const VIEW_COMMANDS: Record<string, 'skill' | 'mcp'> = {
   '/skill-list': 'skill',
   '/mcp-list': 'mcp',
   '/plugin': 'mcp',
+}
+
+type PermissionMode = 'ask' | 'auto' | 'fullaccess' | 'custom'
+type EffortLevel = ReasoningEffort
+
+const PERMISSION_LABELS: Record<PermissionMode, string> = {
+  ask: '请求批准',
+  auto: '替我审批',
+  fullaccess: '完全访问',
+  custom: '自定义',
+}
+
+const PERMISSION_LEVEL_MAP: Record<PermissionMode, PermissionLevel> = {
+  ask: 'readOnly',
+  auto: 'workspaceWrite',
+  fullaccess: 'fullAccess',
+  custom: 'workspaceWrite',
+}
+
+const LEVEL_TO_MODE: Record<PermissionLevel, PermissionMode> = {
+  readOnly: 'ask',
+  workspaceWrite: 'auto',
+  fullAccess: 'fullaccess',
+}
+
+const EFFORT_LABELS: Record<EffortLevel, string> = {
+  minimal: '极低',
+  low: '低',
+  medium: '中',
+  high: '高',
 }
 
 export function ChatPanel({ onToggleLeft, onToggleRight, leftCollapsed, rightCollapsed }: ChatPanelProps = {}) {
@@ -96,49 +103,58 @@ export function ChatPanel({ onToggleLeft, onToggleRight, leftCollapsed, rightCol
   const deleteMessage = useChatStore((s) => s.deleteMessage)
   const toggleFold = useChatStore((s) => s.toggleFold)
   const overrideReasoningEffort = useChatStore((s) => s.overrideReasoningEffort)
-  const overrideContextLength = useChatStore((s) => s.overrideContextLength)
+  const setOverrides = useChatStore((s) => s.setOverrides)
 
-  const diffCount = useDiffStore((s) => s.diffs.length)
   const pendingCount = useDiffStore((s) => s.diffs.filter((d) => d.status === 'pending').length)
   const registerDiff = useDiffStore((s) => s.register)
   const refreshDiff = useDiffStore((s) => s.refresh)
 
   const [draft, setDraft] = useState('')
-  // 已挂载附件（@文件）与斜杠指令（/refactor 等）
   const [attachments, setAttachments] = useState<string[]>([])
   const [slashCommand, setSlashCommand] = useState<string | null>(null)
-  // 状态条用：模型名 + 默认参数（首次拉取后端配置）
   const [model, setModel] = useState('deepseek-chat')
-  const [defaultCtxLen, setDefaultCtxLen] = useState(20)
   const [defaultEffort, setDefaultEffort] = useState('medium')
-  // 视图类斜杠指令打开的浮层：/skill-list /mcp-list /plugin
   const [skillListOpen, setSkillListOpen] = useState(false)
   const [mcpListOpen, setMcpListOpen] = useState(false)
   const scrollRef = useAutoScroll(messages)
 
-  // 拉取模型名 + 默认参数（仅一次）
+  const [projectName, setProjectName] = useState('CodeWhale')
+  const [gitBranch, setGitBranch] = useState('main')
+  const [permissionMode, setPermissionMode] = useState<PermissionMode>('fullaccess')
+  const [mcpPlugins, setMcpPlugins] = useState<Array<McpConfig & { status?: McpStatus }>>([])
+
   useEffect(() => {
     void configApi.get().then((c) => setModel(c.model)).catch(() => {})
     void paramsApi.get().then((p) => {
-      setDefaultCtxLen(p.contextLength)
       setDefaultEffort(p.reasoningEffort)
+    }).catch(() => {})
+    void projectApi.get().then((p: ProjectInfo) => {
+      const name = p.path ? p.path.split(/[\\/]/).pop() : 'CodeWhale'
+      setProjectName(name || 'CodeWhale')
+    }).catch(() => {})
+    void gitApi.status().then((g: GitStatus) => {
+      setGitBranch(g.branch || 'main')
+    }).catch(() => {})
+    void permissionApi.get().then((p: PermissionConfig) => {
+      setPermissionMode(LEVEL_TO_MODE[p.level] || 'fullaccess')
+    }).catch(() => {})
+    void mcpApi.list().then((r) => {
+      setMcpPlugins(r.plugins || [])
     }).catch(() => {})
   }, [])
 
   const tokenEst = useMemo(() => {
-    // 粗略估算：4 字符 ≈ 1 token
     const chars = messages.reduce((sum, m) => sum + (m.content?.length ?? 0) + (m.reasoning?.length ?? 0), 0)
     return Math.ceil(chars / 4)
   }, [messages])
 
-  const handleSend = useCallback(() => {
-    const text = draft
-    if (!text.trim() || streaming) return
+  const handleSend = useCallback((text?: string) => {
+    const sendText = text ?? draft
+    if (!sendText.trim() || streaming) return
     setDraft('')
-    // 发送后清空附件与斜杠指令（已随消息发送给后端）
     setAttachments([])
     setSlashCommand(null)
-    void send(text, { attachments, slashCommand: slashCommand ?? undefined })
+    void send(sendText, { attachments, slashCommand: slashCommand ?? undefined })
   }, [draft, streaming, send, attachments, slashCommand])
 
   const handleStop = useCallback(() => {
@@ -157,7 +173,6 @@ export function ChatPanel({ onToggleLeft, onToggleRight, leftCollapsed, rightCol
     void resetSession()
   }, [resetSession, streaming])
 
-  /** 代码块"应用修改"：注册到后端 Diff 注册表，并展开右栏 Diff 面板 */
   const handleApplyCode = useCallback(
     async (code: string, filename?: string, lang?: string) => {
       const dialog = useDialogStore.getState()
@@ -174,7 +189,6 @@ export function ChatPanel({ onToggleLeft, onToggleRight, leftCollapsed, rightCol
         sessionId: sessionId ?? undefined,
       })
       if (id) {
-        // 若右栏折叠，则展开以显示 Diff
         if (rightCollapsed && onToggleRight) {
           onToggleRight()
         }
@@ -195,19 +209,55 @@ export function ChatPanel({ onToggleLeft, onToggleRight, leftCollapsed, rightCol
     void _filename
   }, [])
 
-  /** 切换模型：持久化到后端配置 + 更新本地状态 */
   const handleModelSwitch = useCallback(async (id: string) => {
     setModel(id)
     try {
       await configApi.set({ model: id })
     } catch {
-      /* 后端不可用时静默回退（仅本地切换） */
     }
   }, [])
 
+  /** 切换推理强度：覆盖本轮参数 */
+  const handleEffortChange = useCallback((e: EffortLevel) => {
+    setOverrides({ reasoningEffort: e })
+  }, [setOverrides])
+
+  /** 重置为默认设置 */
+  const handleResetDefaults = useCallback(async () => {
+    setOverrides({ reasoningEffort: undefined, contextLength: undefined })
+    try {
+      const c = await configApi.get()
+      setModel(c.model)
+      const p = await paramsApi.get()
+      setDefaultEffort(p.reasoningEffort)
+    } catch {
+    }
+  }, [setOverrides])
+
+  const handlePermissionChange = useCallback(async (mode: PermissionMode) => {
+    setPermissionMode(mode)
+    if (mode !== 'custom') {
+      try {
+        await permissionApi.set({ level: PERMISSION_LEVEL_MAP[mode] })
+      } catch {
+      }
+    }
+  }, [])
+
+  const handleMcpToggle = useCallback(async (id: string) => {
+    try {
+      const r = await mcpApi.toggle(id)
+      setMcpPlugins(prev => prev.map(p => p.meta.id === id ? { ...p, meta: { ...p.meta, enabled: r.enabled } } : p))
+    } catch {
+    }
+  }, [])
+
+  const currentModelProfile = useMemo(() => {
+    return BUILTIN_MODEL_PROFILES.find(p => p.id === model) || BUILTIN_MODEL_PROFILES[0]
+  }, [model])
+
   return (
     <div className="flex flex-col h-full">
-      {/* === 顶栏（极简） === */}
       <div className="panel-header">
         <div className="flex items-center gap-2 min-w-0">
           {onToggleLeft && (
@@ -225,16 +275,15 @@ export function ChatPanel({ onToggleLeft, onToggleRight, leftCollapsed, rightCol
           </span>
         </div>
         <div className="flex items-center gap-1">
-          {/* Diff 切换按钮：显示待应用数 */}
           {onToggleRight && (
             <button
               onClick={onToggleRight}
-              className={`icon-btn relative ${!rightCollapsed ? 'text-accent' : ''}`}
+              className={`icon-btn relative ${!rightCollapsed ? 'text-white' : ''}`}
               title={rightCollapsed ? '展开变更面板' : '折叠变更面板'}
             >
               <DiffIcon />
               {pendingCount > 0 && rightCollapsed && (
-                <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] px-1 rounded-full bg-accent text-white text-2xs font-mono flex items-center justify-center">
+                <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] px-1 rounded-full bg-white text-black text-2xs font-mono flex items-center justify-center">
                   {pendingCount}
                 </span>
               )}
@@ -251,10 +300,9 @@ export function ChatPanel({ onToggleLeft, onToggleRight, leftCollapsed, rightCol
         </div>
       </div>
 
-      {/* === 消息流 === */}
       <div ref={scrollRef} className="flex-1 overflow-auto">
         {messages.length === 0 ? (
-          <EmptyState />
+          <EmptyState projectName={projectName} onQuickAction={handleSend} />
         ) : (
           <div className="py-2">
             {messages.map((m) => (
@@ -273,27 +321,27 @@ export function ChatPanel({ onToggleLeft, onToggleRight, leftCollapsed, rightCol
         )}
       </div>
 
-      {/* === 错误条 === */}
       {lastError && !streaming && (
         <div className="px-4 py-1.5 border-t border-rose-500/30 bg-rose-500/10 text-2xs text-rose-300">
           最近错误：{lastError}
         </div>
       )}
 
-      {/* === 底部输入栏（Codex 风格圆角大框 + 内嵌发送 + 底部状态条） === */}
       <div className="px-4 pb-3 pt-2">
         <ChatInputBar
           value={draft}
           onChange={setDraft}
-          onSend={handleSend}
+          onSend={() => handleSend()}
           onStop={handleStop}
           streaming={streaming}
-          model={model}
-          modelProfiles={BUILTIN_MODEL_PROFILES}
-          onModelSwitch={handleModelSwitch}
-          contextLength={overrideContextLength ?? defaultCtxLen}
-          effort={overrideReasoningEffort ?? defaultEffort}
-          diffCount={diffCount}
+          modelDisplayName={currentModelProfile.displayName}
+          effort={(overrideReasoningEffort ?? defaultEffort) as EffortLevel}
+          projectName={projectName}
+          gitBranch={gitBranch}
+          permissionMode={permissionMode}
+          onPermissionChange={handlePermissionChange}
+          mcpPlugins={mcpPlugins}
+          onMcpToggle={handleMcpToggle}
           attachments={attachments}
           onAttachmentsChange={setAttachments}
           slashCommand={slashCommand}
@@ -301,10 +349,12 @@ export function ChatPanel({ onToggleLeft, onToggleRight, leftCollapsed, rightCol
           commands={EXTENDED_SLASH_COMMANDS}
           onOpenSkillList={() => setSkillListOpen(true)}
           onOpenMcpList={() => setMcpListOpen(true)}
+          onModelSwitch={handleModelSwitch}
+          onEffortChange={handleEffortChange}
+          onResetDefaults={handleResetDefaults}
         />
       </div>
 
-      {/* === 视图类斜杠指令触发的浮层 === */}
       {skillListOpen && (
         <SkillListPanel floating onClose={() => setSkillListOpen(false)} />
       )}
@@ -321,29 +371,27 @@ interface ChatInputBarProps {
   onSend: () => void
   onStop: () => void
   streaming: boolean
-  model: string
-  /** 可用模型档案列表（用于 ModelSwitcher） */
-  modelProfiles: ModelProfile[]
-  /** 切换模型回调 */
-  onModelSwitch: (id: string) => void
-  contextLength: number
-  effort: string
-  diffCount: number
+  modelDisplayName: string
+  effort: EffortLevel
+  projectName: string
+  gitBranch: string
+  permissionMode: PermissionMode
+  onPermissionChange: (mode: PermissionMode) => void
+  mcpPlugins: Array<McpConfig & { status?: McpStatus }>
+  onMcpToggle: (id: string) => void
   attachments: string[]
   onAttachmentsChange: (paths: string[]) => void
   slashCommand: string | null
   onSlashCommandChange: (cmd: string | null) => void
-  /** 斜杠指令列表（含技能/插件扩展指令） */
   commands: SlashCommand[]
-  /** 视图类指令：打开技能管理面板 */
   onOpenSkillList: () => void
-  /** 视图类指令：打开 MCP 插件管理面板 */
   onOpenMcpList: () => void
+  onModelSwitch?: (id: string) => void
+  onEffortChange: (e: EffortLevel) => void
+  onResetDefaults: () => void
 }
 
-/** 计算光标所在 token 的边界（基于上一个空格切分） */
 function getCurrentToken(text: string, cursor: number): { start: number; end: number; token: string } {
-  // 向前找最近的空白字符
   let start = cursor
   while (start > 0 && !/\s/.test(text[start - 1])) {
     start--
@@ -351,7 +399,6 @@ function getCurrentToken(text: string, cursor: number): { start: number; end: nu
   return { start, end: cursor, token: text.slice(start, cursor) }
 }
 
-/** 计算菜单定位（在 textarea 上方左下角） */
 function computeMenuPosition(
   textarea: HTMLTextAreaElement,
   estimatedHeight: number,
@@ -362,18 +409,31 @@ function computeMenuPosition(
   return { top, left }
 }
 
+function useClickOutside(ref: React.RefObject<HTMLElement | null>, handler: () => void) {
+  useEffect(() => {
+    const listener = (e: MouseEvent) => {
+      if (!ref.current || ref.current.contains(e.target as Node)) return
+      handler()
+    }
+    document.addEventListener('mousedown', listener)
+    return () => document.removeEventListener('mousedown', listener)
+  }, [ref, handler])
+}
+
 function ChatInputBar({
   value,
   onChange,
   onSend,
   onStop,
   streaming,
-  model,
-  modelProfiles,
-  onModelSwitch,
-  contextLength,
+  modelDisplayName,
   effort,
-  diffCount,
+  projectName,
+  gitBranch,
+  permissionMode,
+  onPermissionChange,
+  mcpPlugins,
+  onMcpToggle,
   attachments,
   onAttachmentsChange,
   slashCommand,
@@ -381,23 +441,48 @@ function ChatInputBar({
   commands,
   onOpenSkillList,
   onOpenMcpList,
+  onEffortChange,
+  onResetDefaults,
 }: ChatInputBarProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  // SlashMenu 状态
+  const containerRef = useRef<HTMLDivElement>(null)
   const [slashVisible, setSlashVisible] = useState(false)
   const [slashPosition, setSlashPosition] = useState({ top: 0, left: 0 })
   const [slashQuery, setSlashQuery] = useState('')
-  // FilePicker 状态
   const [pickerVisible, setPickerVisible] = useState(false)
   const [pickerPosition, setPickerPosition] = useState({ top: 0, left: 0 })
-  // 当前 @ token 在文本中的边界，用于选中文件后替换
   const atTokenRef = useRef<{ start: number; end: number } | null>(null)
-  // 当前 / token 在文本中的边界，用于选中指令后替换
   const slashTokenRef = useRef<{ start: number; end: number } | null>(null)
+
+  const [addMenuOpen, setAddMenuOpen] = useState(false)
+  const [permOpen, setPermOpen] = useState(false)
+  const [modelEffortOpen, setModelEffortOpen] = useState(false)
+  const [effortPickerOpen, setEffortPickerOpen] = useState(false)
+
+  const addBtnRef = useRef<HTMLButtonElement>(null)
+  const permBtnRef = useRef<HTMLButtonElement>(null)
+  const modelBtnRef = useRef<HTMLButtonElement>(null)
+  const addMenuRef = useRef<HTMLDivElement>(null)
+  const permMenuRef = useRef<HTMLDivElement>(null)
+  const modelMenuRef = useRef<HTMLDivElement>(null)
+
+  useClickOutside(addMenuRef, () => setAddMenuOpen(false))
+  useClickOutside(permMenuRef, () => setPermOpen(false))
+  useClickOutside(modelMenuRef, () => { setModelEffortOpen(false); setEffortPickerOpen(false) })
+
+  const getPopoverPos = (btnRef: React.RefObject<HTMLButtonElement | null>) => {
+    if (!btnRef.current) return { bottom: 60, left: 0 }
+    const rect = btnRef.current.getBoundingClientRect()
+    const containerRect = containerRef.current?.getBoundingClientRect()
+    if (!containerRect) return { bottom: 60, left: rect.left }
+    return {
+      bottom: containerRect.bottom - rect.top + 8,
+      left: rect.left - containerRect.left,
+    }
+  }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-      // 当 SlashMenu 可见时，由其全局监听拦截回车，这里跳过
       if (slashVisible) {
         e.preventDefault()
         return
@@ -410,47 +495,37 @@ function ChatInputBar({
   const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const ta = e.target
     onChange(ta.value)
-    // 自适应高度
     ta.style.height = 'auto'
     ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`
 
-    // 检测光标处的 token，决定是否显示 SlashMenu / FilePicker
     const cursor = ta.selectionStart ?? ta.value.length
     const { start, token } = getCurrentToken(ta.value, cursor)
 
-    // SlashMenu 触发：以 `/` 开头且无空格（token 本身不含空格）
     if (token.startsWith('/') && token.length >= 1 && !token.includes(' ')) {
       slashTokenRef.current = { start, end: cursor }
-      setSlashQuery(token.slice(1)) // 去掉 `/`
+      setSlashQuery(token.slice(1))
       setSlashPosition(computeMenuPosition(ta, 260))
       setSlashVisible(true)
-      // 关闭 FilePicker
       if (pickerVisible) setPickerVisible(false)
       return
     }
 
-    // FilePicker 触发：以 `@` 开头
     if (token.startsWith('@')) {
       atTokenRef.current = { start, end: cursor }
       setPickerPosition(computeMenuPosition(ta, 360))
       setPickerVisible(true)
-      // 关闭 SlashMenu
       if (slashVisible) setSlashVisible(false)
       return
     }
 
-    // 都不匹配，关闭两个菜单
     if (slashVisible) setSlashVisible(false)
     if (pickerVisible) setPickerVisible(false)
   }
 
-  /** 选中斜杠指令后：把输入框中的 `/xxx` token 替换为完整指令 + 空格
-   *  视图类指令（/skill-list /mcp-list /plugin）例外：清除 token 后直接打开对应面板 */
   const handleSlashSelect = (cmd: string) => {
     const ta = textareaRef.current
     const range = slashTokenRef.current
 
-    // 视图类指令：清除输入框中的 /xxx token，打开对应面板，不进入 slashCommand 流程
     const viewTarget = VIEW_COMMANDS[cmd]
     if (viewTarget) {
       if (ta && range) {
@@ -470,13 +545,11 @@ function ChatInputBar({
       return
     }
 
-    // 普通指令：替换 token 为完整指令 + 空格，并设置 slashCommand
     if (ta && range) {
       const before = value.slice(0, range.start)
       const after = value.slice(range.end)
       const newVal = `${before}${cmd} ${after}`
       onChange(newVal)
-      // 把光标放到指令后空格之后
       const newCursor = range.start + cmd.length + 1
       requestAnimationFrame(() => {
         ta.focus()
@@ -487,86 +560,69 @@ function ChatInputBar({
     setSlashVisible(false)
   }
 
-  /** 选中文件后：把输入框中的 `@xxx` token 替换为空，将选中文件加入 attachments */
   const handleFilePick = (paths: string[]) => {
     const ta = textareaRef.current
     const range = atTokenRef.current
     if (ta && range) {
       const before = value.slice(0, range.start)
       const after = value.slice(range.end)
-      // 去掉 @token，若 before 末尾是空格且 after 仍是空格则保留一个
       let newVal = `${before}${after}`
-      // 折叠前后多余空格
       newVal = newVal.replace(/\s+\s/g, ' ').trimStart()
       onChange(newVal)
       requestAnimationFrame(() => {
         ta.focus()
       })
     }
-    // 合并去重
     const set = new Set(attachments)
     for (const p of paths) set.add(p)
     onAttachmentsChange(Array.from(set))
     setPickerVisible(false)
   }
 
-  /** 删除附件 */
   const handleRemoveAttachment = (path: string) => {
     onAttachmentsChange(attachments.filter((p) => p !== path))
   }
 
-  /** 删除斜杠指令 */
   const handleRemoveSlash = () => {
     onSlashCommandChange(null)
   }
 
-  // 菜单关闭处理（非选中导致）
   const handleSlashClose = () => setSlashVisible(false)
   const handlePickerClose = () => setPickerVisible(false)
 
+  const addMenuPos = getPopoverPos(addBtnRef)
+  const permPos = getPopoverPos(permBtnRef)
+  const modelPos = getPopoverPos(modelBtnRef)
+
   return (
-    <div className="rounded-xl border border-white/8 bg-white/4 focus-within:border-accent/40 focus-within:bg-white/6 transition-all duration-200 ease-out">
-      {/* 文本输入区 + 内嵌发送按钮 */}
-      <div className="flex items-end gap-2 px-3 pt-3 pb-2">
-        <textarea
-          ref={textareaRef}
-          className="flex-1 resize-none min-h-[28px] max-h-[200px] leading-6 bg-transparent text-sm text-text-primary placeholder-text-tertiary focus:outline-none"
-          placeholder="输入开发需求… (/ 斜杠指令, @ 挂载文件, Enter 发送, Shift+Enter 换行)"
-          rows={1}
-          value={value}
-          onChange={handleInput}
-          onKeyDown={handleKeyDown}
-          data-selectable="true"
-          spellCheck={false}
-        />
-        {streaming ? (
-          <button
-            className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-white/8 text-text-primary hover:bg-white/12 transition-all duration-200"
-            onClick={onStop}
-            title="停止生成"
-          >
-            <StopIcon />
+    <div ref={containerRef} className="relative rounded-3xl border border-white/8 bg-white/4 focus-within:border-white/15 transition-all duration-200 ease-out overflow-visible">
+      <div className="flex items-center gap-1 px-3 py-2 border-b border-white/5 min-h-[44px]">
+        <span className="context-tag inline-flex items-center gap-1.5">
+          <FolderIcon />
+          <span className="truncate max-w-[120px]">{projectName}</span>
+        </span>
+        <span className="context-tag inline-flex items-center gap-1.5">
+          <MonitorIcon />
+          <span>本地</span>
+        </span>
+        <span className="context-tag inline-flex items-center gap-1.5">
+          <GitBranchIcon />
+          <span>{gitBranch}</span>
+        </span>
+        <div className="ml-auto">
+          <button className="w-7 h-7 rounded-full hover:bg-white/8 flex items-center justify-center text-text-tertiary transition-colors">
+            <ChevronUpIcon />
           </button>
-        ) : (
-          <button
-            className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-accent text-white hover:bg-accent-hover disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-200"
-            onClick={onSend}
-            disabled={!value.trim()}
-            title="发送消息"
-          >
-            <SendIcon />
-          </button>
-        )}
+        </div>
       </div>
 
-      {/* 已挂载附件 + 斜杠指令 chips */}
       {(attachments.length > 0 || slashCommand) && (
-        <div className="flex flex-wrap items-center gap-1.5 px-3 pb-1.5">
+        <div className="flex flex-wrap items-center gap-1.5 px-4 pt-2 pb-1 border-b border-white/5">
           {slashCommand && (
-            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-accent/15 border border-accent/30 text-2xs font-mono text-accent">
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white/8 border border-white/10 text-xs font-mono text-text-primary">
               {slashCommand}
               <button
-                className="text-accent hover:text-accent-hover"
+                className="text-text-secondary hover:text-text-primary ml-0.5"
                 onClick={handleRemoveSlash}
                 title="移除指令"
               >
@@ -577,13 +633,13 @@ function ChatInputBar({
           {attachments.map((p) => (
             <span
               key={p}
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white/6 border border-white/8 text-2xs font-mono text-text-secondary max-w-[180px]"
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white/6 border border-white/8 text-xs font-mono text-text-secondary max-w-[200px]"
               title={p}
             >
-              <AttachIcon />
+              <PaperclipIcon />
               <span className="truncate">{p}</span>
               <button
-                className="text-text-tertiary hover:text-text-primary"
+                className="text-text-tertiary hover:text-text-primary ml-0.5"
                 onClick={() => handleRemoveAttachment(p)}
                 title="移除附件"
               >
@@ -594,28 +650,191 @@ function ChatInputBar({
         </div>
       )}
 
-      {/* 底部状态条：模型 / 上下文 / 推理强度 / 变更数 */}
-      <div className="flex items-center gap-3 px-3 py-1.5 border-t border-white/5 text-2xs font-mono text-text-tertiary">
-        <ModelSwitcher
-          current={model}
-          profiles={modelProfiles}
-          onSwitch={(id) => void onModelSwitch(id)}
-          compact
+      <div>
+        <textarea
+          ref={textareaRef}
+          className="w-full resize-none bg-transparent text-sm text-text-primary placeholder-text-tertiary focus:outline-none px-4 pt-3 pb-2 leading-7"
+          style={{ minHeight: 44, maxHeight: 200 }}
+          placeholder="随心输入"
+          rows={1}
+          value={value}
+          onChange={handleInput}
+          onKeyDown={handleKeyDown}
+          data-selectable="true"
+          spellCheck={false}
         />
-        <span className="text-white/10">·</span>
-        <span>ctx {contextLength}</span>
-        <span className="text-white/10">·</span>
-        <span>effort {effort}</span>
-        {diffCount > 0 && (
-          <>
-            <span className="text-white/10">·</span>
-            <span className="text-accent">{diffCount} 变更</span>
-          </>
-        )}
-        <span className="ml-auto text-text-tertiary/70">读写权限：工作区</span>
       </div>
 
-      {/* 浮层菜单：斜杠指令 / 文件挂载 */}
+      <div className="flex items-center justify-between px-3 border-t border-white/5 h-[52px]">
+        <div className="flex items-center gap-2">
+          <button
+            ref={addBtnRef}
+            onClick={() => setAddMenuOpen(!addMenuOpen)}
+            className="w-9 h-9 rounded-full bg-transparent hover:bg-white/8 text-2xl flex items-center justify-center text-text-secondary transition-colors"
+            title="添加内容"
+          >
+            <PlusIcon />
+          </button>
+          <button
+            ref={permBtnRef}
+            onClick={() => setPermOpen(!permOpen)}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm transition-colors ${
+              permissionMode === 'fullaccess'
+                ? 'bg-warn/20 text-warn hover:bg-warn/30'
+                : 'bg-white/6 text-text-secondary hover:bg-white/10'
+            }`}
+          >
+            <ShieldIcon />
+            <span>{PERMISSION_LABELS[permissionMode]}</span>
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            ref={modelBtnRef}
+            onClick={() => setModelEffortOpen(!modelEffortOpen)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/6 text-text-secondary hover:bg-white/10 text-sm transition-colors"
+          >
+            <span>{modelDisplayName}</span>
+            <span className="text-text-tertiary">{EFFORT_LABELS[effort]}</span>
+          </button>
+          {streaming ? (
+            <button
+              className="w-9 h-9 rounded-full bg-white/10 text-text-tertiary hover:bg-white/15 flex items-center justify-center transition-colors"
+              onClick={onStop}
+              title="停止生成"
+            >
+              <StopIcon />
+            </button>
+          ) : (
+            <button
+              className="w-9 h-9 rounded-full bg-white text-black hover:bg-white/90 disabled:bg-white/10 disabled:text-text-tertiary flex items-center justify-center transition-colors disabled:cursor-not-allowed"
+              onClick={onSend}
+              disabled={!value.trim()}
+              title="发送消息"
+            >
+              <SendIcon />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {addMenuOpen && (
+        <div
+          ref={addMenuRef}
+          className="fixed z-50 rounded-2xl bg-surface-elevated border border-surface-border shadow-raised p-1.5 animate-scale-in"
+          style={{ bottom: addMenuPos.bottom, left: addMenuPos.left, minWidth: 240, maxHeight: 420, overflowY: 'auto' }}
+        >
+          <div className="text-xs text-text-tertiary px-3 py-2 font-semibold">添加</div>
+          <MenuItem icon={<PaperclipIcon />} label="文件和文件夹" onClick={() => { setAddMenuOpen(false); }} />
+          <MenuItem icon={<FolderIcon />} label="项目" desc="为新任务选择项目" onClick={() => setAddMenuOpen(false)} />
+          <MenuItem icon={<TargetIcon />} label="目标" desc="设置要持续追求的目标" onClick={() => setAddMenuOpen(false)} />
+          <MenuItem icon={<BulbIcon />} label="计划模式" desc="开启计划模式" onClick={() => setAddMenuOpen(false)} />
+          {mcpPlugins.length > 0 && (
+            <>
+              <div className="text-xs text-text-tertiary px-3 py-2 font-semibold border-t border-white/5 mt-1">插件</div>
+              {mcpPlugins.map((p) => (
+                <MenuItem
+                  key={p.meta.id}
+                  icon={<span className="w-5 h-5 rounded bg-white/10 flex items-center justify-center text-xs">{p.meta.name?.[0]?.toUpperCase() || 'P'}</span>}
+                  label={p.meta.name || p.meta.id}
+                  desc={p.meta.capabilities || p.meta.description || ''}
+                  trailing={p.meta.enabled ? <span className="text-white text-xs">✓</span> : null}
+                  onClick={() => onMcpToggle(p.meta.id)}
+                />
+              ))}
+            </>
+          )}
+        </div>
+      )}
+
+      {permOpen && (
+        <div
+          ref={permMenuRef}
+          className="fixed z-50 rounded-2xl bg-surface-elevated border border-surface-border shadow-raised p-1.5 animate-scale-in"
+          style={{ bottom: permPos.bottom, left: permPos.left, minWidth: 280 }}
+        >
+          <div className="text-xs text-text-tertiary px-3 py-2">应如何批准操作？</div>
+          <PermissionItem
+            icon={<HandIcon />}
+            label="请求批准"
+            desc="编辑外部文件和使用互联网时始终询问"
+            selected={permissionMode === 'ask'}
+            onClick={() => { onPermissionChange('ask'); setPermOpen(false); }}
+          />
+          <PermissionItem
+            icon={<MaskIcon />}
+            label="替我审批"
+            desc="仅对检测到的风险操作请求批准"
+            selected={permissionMode === 'auto'}
+            onClick={() => { onPermissionChange('auto'); setPermOpen(false); }}
+          />
+          <PermissionItem
+            icon={<ShieldIcon />}
+            label="完全访问权限"
+            desc="可不受限制地访问互联网和您电脑上的任何文件"
+            selected={permissionMode === 'fullaccess'}
+            warn
+            onClick={() => { onPermissionChange('fullaccess'); setPermOpen(false); }}
+          />
+          <PermissionItem
+            icon={<GearIcon />}
+            label="自定义 config.toml"
+            desc="使用 config.toml 中定义的权限"
+            selected={permissionMode === 'custom'}
+            onClick={() => { onPermissionChange('custom'); setPermOpen(false); }}
+          />
+        </div>
+      )}
+
+      {modelEffortOpen && (
+        <div
+          ref={modelMenuRef}
+          className="fixed z-50 rounded-2xl bg-surface-elevated border border-surface-border shadow-raised p-1.5 animate-scale-in"
+          style={{ bottom: modelPos.bottom, right: 'auto', left: modelPos.left, minWidth: 240 }}
+        >
+          {!effortPickerOpen ? (
+            <>
+              <MenuItem
+                label="模型"
+                trailing={<span className="flex items-center gap-1 text-text-tertiary text-sm">{modelDisplayName}<ChevronRightIcon /></span>}
+                onClick={() => setEffortPickerOpen(false)}
+                justifyBetween
+              />
+              <MenuItem
+                label="推理强度"
+                trailing={<span className="flex items-center gap-1 text-text-tertiary text-sm">{EFFORT_LABELS[effort]}<ChevronRightIcon /></span>}
+                onClick={() => setEffortPickerOpen(true)}
+                justifyBetween
+              />
+              <div className="border-t border-white/5 my-1" />
+              <MenuItem
+                icon={<RefreshIcon />}
+                label="重置为默认设置"
+                onClick={() => { setModelEffortOpen(false); setEffortPickerOpen(false); onResetDefaults() }}
+              />
+            </>
+          ) : (
+            <>
+              <MenuItem
+                icon={<ChevronRightIcon className="rotate-180" />}
+                label="返回"
+                onClick={() => setEffortPickerOpen(false)}
+              />
+              <div className="border-t border-white/5 my-1" />
+              {(['minimal', 'low', 'medium', 'high'] as EffortLevel[]).map((e) => (
+                <MenuItem
+                  key={e}
+                  label={EFFORT_LABELS[e]}
+                  trailing={effort === e ? <span className="text-white">✓</span> : null}
+                  onClick={() => { onEffortChange(e); setEffortPickerOpen(false); setModelEffortOpen(false) }}
+                />
+              ))}
+            </>
+          )}
+        </div>
+      )}
+
       <SlashMenu
         commands={commands}
         visible={slashVisible}
@@ -634,132 +853,330 @@ function ChatInputBar({
   )
 }
 
+function MenuItem({
+  icon,
+  label,
+  desc,
+  trailing,
+  onClick,
+  justifyBetween,
+}: {
+  icon?: React.ReactNode
+  label: string
+  desc?: string
+  trailing?: React.ReactNode
+  onClick: () => void
+  justifyBetween?: boolean
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full flex items-start gap-3 px-3 py-2.5 rounded-xl hover:bg-white/8 cursor-pointer transition-colors text-left ${justifyBetween ? 'justify-between' : ''}`}
+    >
+      {icon && <span className="text-text-secondary mt-0.5 flex-shrink-0">{icon}</span>}
+      <div className="flex-1 min-w-0">
+        <div className="text-sm text-text-primary">{label}</div>
+        {desc && <div className="text-xs text-text-tertiary mt-0.5">{desc}</div>}
+      </div>
+      {trailing && <span className="flex-shrink-0">{trailing}</span>}
+    </button>
+  )
+}
+
+function PermissionItem({
+  icon,
+  label,
+  desc,
+  selected,
+  warn,
+  onClick,
+}: {
+  icon: React.ReactNode
+  label: string
+  desc: string
+  selected: boolean
+  warn?: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full flex items-start gap-3 px-3 py-2.5 rounded-xl hover:bg-white/8 cursor-pointer transition-colors text-left ${selected && warn ? 'text-warn' : ''}`}
+    >
+      <span className={`mt-0.5 flex-shrink-0 ${selected && warn ? 'text-warn' : 'text-text-secondary'}`}>{icon}</span>
+      <div className="flex-1 min-w-0">
+        <div className={`text-sm ${selected && warn ? 'text-warn' : 'text-text-primary'}`}>{label}</div>
+        <div className="text-xs text-text-tertiary mt-0.5">{desc}</div>
+      </div>
+      {selected && <span className={`flex-shrink-0 ${warn ? 'text-warn' : 'text-white'}`}>✓</span>}
+    </button>
+  )
+}
+
+function EmptyState({ projectName, onQuickAction }: { projectName: string; onQuickAction: (text: string) => void }) {
+  const quickActions = [
+    { icon: <SearchIcon />, color: '#60A5FA', label: '探索并理解代码', prompt: '探索并理解当前代码库的结构与逻辑' },
+    { icon: <HammerIcon />, color: '#C084FC', label: '构建新功能、应用或工具', prompt: '构建一个新功能/应用/工具' },
+    { icon: <CycleIcon />, color: '#34D399', label: '审查代码并提出修改建议', prompt: '审查当前代码并提出修改建议' },
+    { icon: <BugIcon />, color: '#FB923C', label: '修复问题和失败', prompt: '定位并修复代码中的问题和失败' },
+  ]
+
+  return (
+    <div className="flex flex-col items-center justify-center h-full text-center px-6 py-10">
+      <TerminalLogoIcon />
+      <h1 className="text-[38px] font-bold text-text-primary mt-6 tracking-tight leading-tight">
+        我们在 <span className="border-b border-dashed border-text-tertiary pb-1">{projectName}</span> 中构建什么？
+      </h1>
+      <div className="grid grid-cols-4 gap-3 mt-8 max-w-5xl w-full">
+        {quickActions.map((action, i) => (
+          <button
+            key={i}
+            onClick={() => onQuickAction(action.prompt)}
+            className="rounded-2xl border border-white/8 bg-white/3 hover:bg-white/8 hover:border-white/15 hover:scale-[1.02] transition-all duration-200 ease-out cursor-pointer p-5 text-left min-h-[140px] flex flex-col group"
+          >
+            <span className="text-2xl mb-auto" style={{ color: action.color }}>{action.icon}</span>
+            <div className="text-base font-semibold text-text-primary mt-3">{action.label}</div>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function CloseMiniIcon() {
   return (
-    <svg width="9" height="9" viewBox="0 0 16 16" fill="none">
-      <line x1="4" y1="4" x2="12" y2="12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-      <line x1="12" y1="4" x2="4" y2="12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    <svg width="10" height="10" viewBox="0 0 16 16" fill="none">
+      <line x1="4" y1="4" x2="12" y2="12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <line x1="12" y1="4" x2="4" y2="12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
-  )
-}
-
-function AttachIcon() {
-  return (
-    <svg width="9" height="9" viewBox="0 0 16 16" fill="none" className="text-text-tertiary">
-      <path
-        d="M11 5l-5 5a2 2 0 102.8 2.8L13 8.5a3.5 3.5 0 10-5-5L4 7.8"
-        stroke="currentColor"
-        strokeWidth="1.2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill="none"
-      />
-    </svg>
-  )
-}
-
-function EmptyState() {
-  return (
-    <div className="flex flex-col items-center justify-center h-full gap-3.5 text-center px-6">
-      <WhaleIcon />
-      <div className="text-lg text-text-secondary">开始与 CodeWhale 对话</div>
-      <div className="text-xs text-text-tertiary max-w-md">
-        输入开发需求，AI 将基于 DeepSeek V4 流式输出推理与代码；代码块顶部声明文件名后可一键应用为 Diff 变更。
-      </div>
-      <div className="mt-2 grid grid-cols-2 gap-2 text-left max-w-lg">
-        <ExampleCard
-          title="实现新功能"
-          hint="在 src/utils.rs 添加 sha256 工具函数并附单测"
-        />
-        <ExampleCard
-          title="修复 Bug"
-          hint="分析 panic 堆栈，定位到 unwrap 调用并替换为 ?"
-        />
-        <ExampleCard
-          title="重构代码"
-          hint="将 chat_handler 拆分为 parse / dispatch / stream 三阶段"
-        />
-        <ExampleCard
-          title="解释代码"
-          hint="说明 src/diff.rs 中 Myers 算法的实现思路"
-        />
-      </div>
-    </div>
-  )
-}
-
-function ExampleCard({ title, hint }: { title: string; hint: string }) {
-  return (
-    <div className="p-2.5 rounded border border-white/8 bg-white/4 hover:bg-white/8 transition-colors">
-      <div className="text-xs font-semibold text-text-primary mb-0.5">{title}</div>
-      <div className="text-2xs text-text-tertiary leading-relaxed">{hint}</div>
-    </div>
   )
 }
 
 function DiffIcon() {
   return (
-    <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
-      <path d="M4 1v4M4 11v4M1 4h6M1 12h6M10 1l3 14M9 8h6" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+      <path d="M4 1v4M4 11v4M1 4h6M1 12h6M10 1l3 14M9 8h6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
     </svg>
   )
 }
 
 function TrashIcon() {
   return (
-    <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
-      <path d="M3 4h10M6 4V2h4v2M5 4l1 9h4l1-9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+      <path d="M3 4h10M6 4V2h4v2M5 4l1 9h4l1-9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   )
 }
 
 function SendIcon() {
   return (
-    <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
-      <path d="M2 8l12-5-5 12-2-5-5-2z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" fill="currentColor" />
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+      <path d="M12 19V5M12 5L5 12M12 5l7 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   )
 }
 
 function StopIcon() {
   return (
-    <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
       <rect x="4" y="4" width="8" height="8" rx="1.5" fill="currentColor" />
-    </svg>
-  )
-}
-
-function WhaleIcon() {
-  return (
-    <svg width="48" height="48" viewBox="0 0 48 48" fill="none" className="text-accent/60">
-      <path
-        d="M8 24c0-8 6-14 16-14s16 6 16 14v4c0 2-2 4-4 4-1.5 0-2.5-1-3-2-1 1.5-3 2-5 2-2.5 0-4-1.5-4-4v-2"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <circle cx="14" cy="22" r="1.2" fill="currentColor" />
-      <path d="M40 24c2-1 4-3 4-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   )
 }
 
 function SidebarIcon({ side, collapsed }: { side: 'left' | 'right'; collapsed: boolean }) {
   return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className="text-text-secondary">
-      <rect x="2" y="3" width="12" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.1" />
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" className="text-text-secondary">
+      <rect x="2" y="3" width="12" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.2" />
       {side === 'left' ? (
         <>
           <rect x="2" y="3" width="4" height="10" fill="currentColor" className={collapsed ? 'opacity-30' : 'opacity-60'} />
-          {collapsed && <path d="M7 8h5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />}
+          {collapsed && <path d="M7 8h5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />}
         </>
       ) : (
         <>
           <rect x="10" y="3" width="4" height="10" fill="currentColor" className={collapsed ? 'opacity-30' : 'opacity-60'} />
-          {collapsed && <path d="M4 8h5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />}
+          {collapsed && <path d="M4 8h5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />}
         </>
       )}
+    </svg>
+  )
+}
+
+function FolderIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2z" />
+    </svg>
+  )
+}
+
+function MonitorIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+      <line x1="8" y1="21" x2="16" y2="21" />
+      <line x1="12" y1="17" x2="12" y2="21" />
+    </svg>
+  )
+}
+
+function GitBranchIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="6" y1="3" x2="6" y2="15" />
+      <circle cx="18" cy="6" r="3" />
+      <circle cx="6" cy="18" r="3" />
+      <path d="M18 9a9 9 0 0 1-9 9" />
+    </svg>
+  )
+}
+
+function ChevronUpIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="18 15 12 9 6 15" />
+    </svg>
+  )
+}
+
+function ChevronRightIcon({ className }: { className?: string }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <polyline points="9 18 15 12 9 6" />
+    </svg>
+  )
+}
+
+function PlusIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </svg>
+  )
+}
+
+function ShieldIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+    </svg>
+  )
+}
+
+function HandIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0" />
+      <path d="M14 10V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v2" />
+      <path d="M10 10.5V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v8" />
+      <path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15" />
+    </svg>
+  )
+}
+
+function MaskIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" />
+      <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+      <line x1="9" y1="9" x2="9.01" y2="9" />
+      <line x1="15" y1="9" x2="15.01" y2="9" />
+    </svg>
+  )
+}
+
+function GearIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </svg>
+  )
+}
+
+function RefreshIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="23 4 23 10 17 10" />
+      <polyline points="1 20 1 14 7 14" />
+      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+    </svg>
+  )
+}
+
+function PaperclipIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+    </svg>
+  )
+}
+
+function TargetIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10" />
+      <circle cx="12" cy="12" r="6" />
+      <circle cx="12" cy="12" r="2" />
+    </svg>
+  )
+}
+
+function BulbIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z" />
+    </svg>
+  )
+}
+
+function TerminalLogoIcon() {
+  return (
+    <svg width="80" height="80" viewBox="0 0 80 80" fill="none" className="text-text-tertiary">
+      <rect x="8" y="12" width="64" height="48" rx="10" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M48 8c-4 8-4 16 0 24 4 8 4 16 0 24" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+      <polyline points="24,32 32,40 24,48" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+      <line x1="38" y1="48" x2="52" y2="48" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function SearchIcon() {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="11" cy="11" r="8" />
+      <line x1="21" y1="21" x2="16.65" y2="16.65" />
+    </svg>
+  )
+}
+
+function HammerIcon() {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M15 12l-8.5 8.5c-.83.83-2.17.83-3 0c-.83-.83-.83-2.17 0-3L12 9" />
+      <path d="M17.64 15L22 10.64" />
+      <path d="M20.91 11.7l-1.25-1.25c-.6-.6-.93-1.4-.93-2.25v-.86L16.01 4.6a5.56 5.56 0 0 0-3.94-1.64H9l.92.82A6.18 6.18 0 0 1 12 8.4v1.56l2 2h2.47l2.26 1.91" />
+    </svg>
+  )
+}
+
+function CycleIcon() {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="1 4 1 10 7 10" />
+      <polyline points="23 20 23 14 17 14" />
+      <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15" />
+    </svg>
+  )
+}
+
+function BugIcon() {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="8" y="6" width="8" height="14" rx="4" />
+      <path d="M19 7l-3 2M5 7l3 2M19 14l-3-2M5 14l3-2M12 20v-4M12 10V4M8 4l4 2 4-2" />
     </svg>
   )
 }

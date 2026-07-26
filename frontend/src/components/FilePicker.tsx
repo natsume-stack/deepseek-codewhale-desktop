@@ -286,7 +286,7 @@ function FileTreeRow({ flat, isSelected, onToggleExpand, onToggleSelect }: FileT
         <span
           className={`inline-flex items-center justify-center w-3.5 h-3.5 rounded-sm border text-2xs transition-all duration-200 ${
             isSelected
-              ? 'bg-accent border-accent text-white'
+              ? 'bg-white border-white text-black'
               : 'border-white/15 text-transparent'
           }`}
         >

@@ -41,17 +41,17 @@ export function WorkArea({ layout }: WorkAreaProps) {
       {/* === 三栏主体（可拉伸） === */}
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* === 左栏：文件树面板 === */}
-        {!leftCollapsed && (
-          <>
-            <div
-              className="flex-shrink-0 overflow-hidden"
-              style={{ width: leftWidth }}
-            >
+        <div
+          className={`flex-shrink-0 overflow-hidden transition-all duration-300 ease-bounce ${leftCollapsed ? 'w-0' : ''}`}
+          style={{ width: leftCollapsed ? 0 : leftWidth }}
+        >
+          {!leftCollapsed && (
+            <div className="h-full animate-fade-in">
               <FileTreePanel onOpenFolder={() => toggleLeft()} />
             </div>
-            <div className="splitter" onMouseDown={startDragLeft} />
-          </>
-        )}
+          )}
+        </div>
+        {!leftCollapsed && <div className="splitter" onMouseDown={startDragLeft} />}
 
         {/* === 中栏：对话面板（弹性宽度） === */}
         <div className="flex-1 min-w-0 overflow-hidden">
@@ -63,18 +63,18 @@ export function WorkArea({ layout }: WorkAreaProps) {
           />
         </div>
 
-        {/* === 右栏：多功能面板（变更/代办/GitHub 多 Tab，替代原 ParamsPanel） === */}
-        {!rightCollapsed && (
-          <>
-            <div className="splitter" onMouseDown={startDragRight} />
-            <div
-              className="flex-shrink-0 overflow-hidden"
-              style={{ width: rightWidth }}
-            >
+        {/* === 右栏：多功能面板 === */}
+        {!rightCollapsed && <div className="splitter" onMouseDown={startDragRight} />}
+        <div
+          className={`flex-shrink-0 overflow-hidden transition-all duration-300 ease-bounce ${rightCollapsed ? 'w-0' : ''}`}
+          style={{ width: rightCollapsed ? 0 : rightWidth }}
+        >
+          {!rightCollapsed && (
+            <div className="h-full animate-fade-in">
               <RightPanel onClose={toggleRight} />
             </div>
-          </>
-        )}
+          )}
+        </div>
       </div>
 
       {/* === 底部状态条 === */}

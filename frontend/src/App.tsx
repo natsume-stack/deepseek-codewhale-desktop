@@ -143,13 +143,15 @@ export default function App() {
         <SideNav view={view} onViewChange={setView} />
 
         {/* 右侧工作区（不透明圆角板块，与 SideNav 视觉分层） */}
-        <div className="flex-1 min-w-0 min-h-0 p-2 pl-0">
+        <div className="flex-1 min-w-0 min-h-0 p-3 pl-0">
           <div className="work-surface h-full w-full">
-            {view === 'chat' ? (
-              <WorkArea layout={layout} />
-            ) : (
-              <SettingsPage />
-            )}
+            <div key={view} className="h-full w-full animate-page-transition">
+              {view === 'chat' ? (
+                <WorkArea layout={layout} />
+              ) : (
+                <SettingsPage />
+              )}
+            </div>
           </div>
         </div>
       </div>
