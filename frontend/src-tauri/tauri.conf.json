@@ -36,12 +36,23 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["msi", "nsis"],
+    "targets": ["nsis"],
     "icon": [
       "icons/icon.png",
       "icons/icon.ico"
     ],
     "externalBin": ["binaries/codewhale-server"],
-    "resources": []
+    "resources": [],
+    "windows": {
+      "nsis": {
+        "installMode": "both",
+        "languages": ["SimpChinese", "English"],
+        "displayLanguageSelector": true,
+        "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "icons/icon.ico",
+        "startMenuFolder": "CodeWhale",
+        "installerHooks": "installer-hooks.nsh"
+      }
+    }
   }
 }

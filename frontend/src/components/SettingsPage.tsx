@@ -32,6 +32,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
+import { createPortal } from 'react-dom'
 import {
   configApi,
   mcpApi,
@@ -425,25 +426,56 @@ export function SelectMenu({
   onChange: (value: string) => void
 }) {
   const [open, setOpen] = useState(false)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const [menuRect, setMenuRect] = useState<{ top: number; left: number; width: number } | null>(null)
   const selected = options.find((option) => option.value === value) ?? options[0]
+
+  const close = useCallback(() => setOpen(false), [])
+  const toggle = () => {
+    const rect = triggerRef.current?.getBoundingClientRect()
+    if (rect) setMenuRect({ top: rect.bottom + 6, left: rect.left, width: rect.width })
+    setOpen((visible) => !visible)
+  }
+
+  useEffect(() => {
+    if (!open) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') close()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('resize', close)
+    window.addEventListener('scroll', close, true)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('resize', close)
+      window.removeEventListener('scroll', close, true)
+    }
+  }, [open, close])
+
   return (
     <div className="relative">
       <button
+        ref={triggerRef}
         type="button"
         disabled={disabled}
-        onClick={() => setOpen((visible) => !visible)}
+        onClick={toggle}
         className="input-base flex items-center justify-between gap-3 text-left disabled:cursor-not-allowed disabled:opacity-50"
       >
         <span className="truncate">{selected?.label ?? '请选择'}</span>
         <ChevronDownIcon />
       </button>
-      {open && !disabled && (
-        <div className="absolute z-40 mt-1 w-full overflow-hidden rounded-[12px] border border-white/10 bg-[#202022] p-1 shadow-raised">
+      {open && !disabled && menuRect && createPortal(
+        <>
+          <button type="button" aria-label="关闭选择菜单" className="fixed inset-0 z-[90] cursor-default" onClick={close} />
+          <div
+            className="fixed z-[100] overflow-hidden rounded-[12px] border border-white/10 bg-[#202022] p-1 shadow-raised"
+            style={{ top: menuRect.top, left: menuRect.left, width: menuRect.width }}
+          >
           {options.map((option) => (
             <button
               key={option.value}
               type="button"
-              onClick={() => { onChange(option.value); setOpen(false) }}
+              onClick={() => { onChange(option.value); close() }}
               className={`flex w-full items-center justify-between rounded-[8px] px-3 py-2 text-left text-xs transition-colors ${
                 option.value === value ? 'bg-white/12 text-text-primary' : 'text-text-secondary hover:bg-white/8 hover:text-text-primary'
               }`}
@@ -452,7 +484,9 @@ export function SelectMenu({
               {option.value === value && <span>✓</span>}
             </button>
           ))}
-        </div>
+          </div>
+        </>,
+        document.body,
       )}
     </div>
   )

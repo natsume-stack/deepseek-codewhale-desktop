@@ -166,10 +166,18 @@ impl DeepSeekClient {
         if let Some(t) = req.temperature {
             body["temperature"] = serde_json::json!(t);
         }
-        // DeepSeek's direct Chat Completions endpoint accepts the OpenAI-compatible
-        // request shape. Context caching and effort selection are local agent
-        // concerns; sending them as undocumented fields makes many compatible
-        // gateways reject an otherwise valid request.
+        // DeepSeek V4 exposes its reasoning controls through the compatible
+        // Chat Completions API. Older model IDs keep the minimal request shape.
+        if req.model.starts_with("deepseek-v4-") {
+            let effort = match req.reasoning_effort {
+                ReasoningEffort::Minimal => "minimal",
+                ReasoningEffort::Low => "low",
+                ReasoningEffort::Medium => "medium",
+                ReasoningEffort::High => "high",
+            };
+            body["reasoning_effort"] = serde_json::json!(effort);
+            body["thinking"] = serde_json::json!({ "type": "enabled" });
+        }
         body
     }
 

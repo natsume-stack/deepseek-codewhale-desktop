@@ -386,7 +386,7 @@ export const gitApi = {
  * RAG 项目检索（P1）
  * ============================================================ */
 export const ragApi = {
-  getIndex: () => request<RagIndex>('GET', '/rag/index'),
+  getIndex: () => request<{ hasIndex: boolean; index: RagIndex | null }>('GET', '/rag/index').then(({ index }) => index),
   buildIndex: () => request<RagIndex>('POST', '/rag/index'),
   recall: (body: { query: string; maxChunks?: number; maxTokens?: number }) => request<RagRecall>('POST', '/rag/recall', body),
   clear: () => request<{ cleared: boolean }>('DELETE', '/rag/clear'),
